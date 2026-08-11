@@ -1,0 +1,26 @@
+# deps / build
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# env & secrets
+.env
+.env.local
+.env.*.local
+
+# runtime state
+data/
+whatsapp-auth/
+uploads/
+
+# logs
+*.log
+npm-debug.log*
+
+# misc
+.DS_Store
+coverage/
+dump.rdb

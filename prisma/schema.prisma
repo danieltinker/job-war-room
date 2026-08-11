@@ -1,0 +1,233 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Auth ─────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
+// ── Resume vault ─────────────────────────────────────────────────────────
+
+model Resume {
+  id           String        @id @default(cuid())
+  name         String // e.g. "Backend-focused v3"
+  label        String // free-form type tag: "Backend", "Fullstack", "Management"…
+  fileName     String
+  mimeType     String
+  data         Bytes
+  sizeBytes    Int
+  notes        String        @default("")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  profiles     PositionProfile[]
+  applications Application[]
+}
+
+// ── Watchlist ────────────────────────────────────────────────────────────
+
+enum AtsType {
+  NONE
+  GREENHOUSE
+  LEVER
+  ASHBY
+}
+
+model Company {
+  id            String   @id @default(cuid())
+  name          String
+  website       String   @default("")
+  linkedinSlug  String   @default("") // linkedin.com/company/<slug>
+  ats           AtsType  @default(NONE)
+  atsIdentifier String   @default("") // greenhouse board token / lever site / ashby org
+  active        Boolean  @default(true)
+  notes         String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  jobs          Job[]
+
+  @@unique([name])
+}
+
+// ── Position profiles (what "relevant" means) ────────────────────────────
+
+model PositionProfile {
+  id              String   @id @default(cuid())
+  name            String // e.g. "Senior Backend"
+  keywords        String[] // must-match terms scored against title/description
+  titleKeywords   String[] // strong signals matched against title only
+  excludeKeywords String[] // hard filters — any hit disqualifies
+  locations       String[] // substring match, empty = anywhere
+  remoteOk        Boolean  @default(true)
+  minScore        Int      @default(40) // 0-100 suggestion threshold
+  active          Boolean  @default(true)
+  resumeId        String?
+  resume          Resume?  @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  matches         Match[]
+}
+
+// ── Scraped jobs ─────────────────────────────────────────────────────────
+
+enum JobSource {
+  LINKEDIN
+  GREENHOUSE
+  LEVER
+  ASHBY
+  MANUAL
+}
+
+model Job {
+  id           String      @id @default(cuid())
+  dedupeKey    String      @unique // source:externalId or normalized url
+  source       JobSource
+  externalId   String      @default("")
+  url          String
+  title        String
+  companyName  String
+  companyId    String?
+  company      Company?    @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  location     String      @default("")
+  description  String      @default("")
+  postedAt     DateTime?
+  discoveredAt DateTime    @default(now())
+  matches      Match[]
+  application  Application?
+
+  @@index([companyName])
+  @@index([discoveredAt])
+}
+
+enum MatchStatus {
+  SUGGESTED
+  DISMISSED
+  CONVERTED // an application was created from this suggestion
+}
+
+model Match {
+  id              String          @id @default(cuid())
+  jobId           String
+  job             Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  profileId       String
+  profile         PositionProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  score           Int
+  matchedKeywords String[]
+  status          MatchStatus     @default(SUGGESTED)
+  createdAt       DateTime        @default(now())
+
+  @@unique([jobId, profileId])
+  @@index([status, score])
+}
+
+// ── Application pipeline ─────────────────────────────────────────────────
+
+enum AppStatus {
+  APPLIED
+  IN_REVIEW
+  ASSESSMENT
+  INTERVIEW
+  OFFER
+  REJECTED
+  WITHDRAWN
+  GHOSTED
+}
+
+model Application {
+  id        String    @id @default(cuid())
+  jobId     String    @unique
+  job       Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  resumeId  String?
+  resume    Resume?   @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  status    AppStatus @default(APPLIED)
+  appliedAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  notes     String    @default("")
+  events    ApplicationEvent[]
+  emails    EmailMessage[]
+
+  @@index([status])
+}
+
+enum EventSource {
+  MANUAL
+  EMAIL
+  SYSTEM
+}
+
+model ApplicationEvent {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  type          String // e.g. "status_change", "note", "email"
+  description   String
+  source        EventSource @default(SYSTEM)
+  occurredAt    DateTime    @default(now())
+
+  @@index([applicationId, occurredAt])
+}
+
+// ── Email tracking ───────────────────────────────────────────────────────
+
+enum EmailClass {
+  APPLICATION_RECEIVED
+  ASSESSMENT
+  INTERVIEW
+  OFFER
+  REJECTION
+  RECRUITER_OUTREACH
+  OTHER
+}
+
+model EmailMessage {
+  id            String       @id @default(cuid())
+  imapUid       String       @unique // mailbox uidvalidity:uid
+  fromAddress   String
+  subject       String
+  snippet       String       @default("")
+  classification EmailClass  @default(OTHER)
+  receivedAt    DateTime
+  processedAt   DateTime     @default(now())
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([receivedAt])
+}
+
+// ── Ops ──────────────────────────────────────────────────────────────────
+
+model Setting {
+  key       String   @id
+  value     String
+  encrypted Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+}
+
+enum RunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+model ScrapeRun {
+  id          String    @id @default(cuid())
+  kind        String // "scrape" | "email-sync" | "digest"
+  status      RunStatus @default(RUNNING)
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  jobsFound   Int       @default(0)
+  newJobs     Int       @default(0)
+  newMatches  Int       @default(0)
+  detail      String    @default("")
+
+  @@index([kind, startedAt])
+}
