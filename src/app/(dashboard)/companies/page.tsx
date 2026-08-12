@@ -24,6 +24,7 @@ export default async function CompaniesPage() {
           name: c.name,
           website: c.website,
           linkedinSlug: c.linkedinSlug,
+          careersUrl: c.careersUrl,
           ats: c.ats,
           atsIdentifier: c.atsIdentifier,
           active: c.active,

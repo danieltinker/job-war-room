@@ -8,6 +8,7 @@ export interface CompanyRow {
   name: string;
   website: string;
   linkedinSlug: string;
+  careersUrl: string;
   ats: string;
   atsIdentifier: string;
   active: boolean;
@@ -19,6 +20,7 @@ const EMPTY = {
   name: "",
   website: "",
   linkedinSlug: "",
+  careersUrl: "",
   ats: "NONE",
   atsIdentifier: "",
   notes: "",
@@ -59,6 +61,7 @@ export function CompanyManager({ companies }: { companies: CompanyRow[] }) {
       name: c.name,
       website: c.website,
       linkedinSlug: c.linkedinSlug,
+      careersUrl: c.careersUrl,
       ats: c.ats,
       atsIdentifier: c.atsIdentifier,
       notes: c.notes,
@@ -98,6 +101,15 @@ export function CompanyManager({ companies }: { companies: CompanyRow[] }) {
           <div>
             <label className="label">LinkedIn slug</label>
             <input className="input" value={form.linkedinSlug} onChange={(e) => set("linkedinSlug", e.target.value)} placeholder="linkedin.com/company/<slug>" />
+          </div>
+          <div>
+            <label className="label">Careers page URL</label>
+            <input
+              className="input"
+              value={form.careersUrl}
+              onChange={(e) => set("careersUrl", e.target.value)}
+              placeholder="https://company.com/careers — scraped directly"
+            />
           </div>
           <div>
             <label className="label">Careers board (ATS)</label>
@@ -174,6 +186,7 @@ export function CompanyManager({ companies }: { companies: CompanyRow[] }) {
                 <td className="td text-xs text-slate-400">
                   {[
                     c.ats !== "NONE" ? `${c.ats.toLowerCase()} (${c.atsIdentifier})` : null,
+                    c.careersUrl ? "careers page" : null,
                     "linkedin",
                   ]
                     .filter(Boolean)

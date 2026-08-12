@@ -51,9 +51,13 @@ export default async function ApplicationsPage() {
                 <div key={app.id} className="card">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <a href={app.job.url} target="_blank" className="font-semibold text-white hover:text-accent">
-                        {app.job.title}
-                      </a>
+                      {app.job.url ? (
+                        <a href={app.job.url} target="_blank" className="font-semibold text-white hover:text-accent">
+                          {app.job.title}
+                        </a>
+                      ) : (
+                        <span className="font-semibold text-white">{app.job.title}</span>
+                      )}
                       <p className="mt-0.5 text-sm text-slate-400">
                         {app.job.companyName}
                         {app.job.location ? ` · ${app.job.location}` : ""}

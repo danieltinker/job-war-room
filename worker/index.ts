@@ -85,7 +85,12 @@ new Worker(
       jobsFound: r.scanned,
       newJobs: r.jobRelated,
       newMatches: r.statusChanges.length,
-      detail: r.statusChanges.map((c) => `${c.company}: ${c.from}→${c.to}`).join("; "),
+      detail: [
+        r.created ? `${r.created} application(s) auto-created` : "",
+        ...r.statusChanges.map((c) => `${c.company}: ${c.from}→${c.to}`),
+      ]
+        .filter(Boolean)
+        .join("; "),
     }));
     if (result.statusChanges.length > 0) {
       log(`email sync: ${result.statusChanges.length} status change(s)`);

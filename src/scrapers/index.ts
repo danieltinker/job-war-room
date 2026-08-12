@@ -11,6 +11,7 @@ import { dedupeKeyFor } from "@/core/normalize";
 import { scrapeGreenhouse } from "./greenhouse";
 import { scrapeLever } from "./lever";
 import { scrapeAshby } from "./ashby";
+import { scrapeCareersPage } from "./careers";
 import { searchLinkedinJobs, enrichDescriptions } from "./linkedin";
 import type { ScrapedJob, ScrapeContext } from "./types";
 
@@ -23,7 +24,14 @@ export interface SweepResult {
 }
 
 async function scrapeCompany(
-  company: { id: string; name: string; ats: string; atsIdentifier: string; linkedinSlug: string },
+  company: {
+    id: string;
+    name: string;
+    ats: string;
+    atsIdentifier: string;
+    linkedinSlug: string;
+    careersUrl: string;
+  },
   ctx: ScrapeContext,
   errors: string[]
 ): Promise<ScrapedJob[]> {
@@ -38,6 +46,15 @@ async function scrapeCompany(
     }
   } catch (e) {
     errors.push(`${company.name} (ATS): ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  // Direct careers-page scrape (auto-detects embedded ATS boards, JSON-LD, links)
+  if (company.careersUrl) {
+    try {
+      jobs.push(...(await scrapeCareersPage(company.careersUrl, company.name)));
+    } catch (e) {
+      errors.push(`${company.name} (careers): ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   // LinkedIn sweep for the company (guest search filtered by company name)

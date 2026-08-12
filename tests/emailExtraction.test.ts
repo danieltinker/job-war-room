@@ -1,0 +1,83 @@
+import { describe, expect, it } from "vitest";
+import { extractNewCompanyName, extractPositionTitle } from "../src/core/emailClassifier";
+
+describe("extractNewCompanyName", () => {
+  it("extracts from 'application to X' subjects", () => {
+    expect(
+      extractNewCompanyName({
+        fromAddress: "no-reply@greenhouse.io",
+        subject: "Thank you for your application to Team8",
+        body: "",
+      })
+    ).toBe("Team8");
+  });
+
+  it("extracts from 'thank you for applying to X'", () => {
+    expect(
+      extractNewCompanyName({
+        fromAddress: "do-not-reply@comeet.co",
+        subject: "Thank you for applying to Wiz!",
+        body: "",
+      })
+    ).toBe("Wiz");
+  });
+
+  it("falls back to the From display name, stripping generic words", () => {
+    expect(
+      extractNewCompanyName({
+        fromAddress: "no-reply@comeet.co",
+        fromName: "Team8 Careers",
+        subject: "We received your application",
+        body: "",
+      })
+    ).toBe("Team8");
+  });
+
+  it("falls back to a non-generic sender domain", () => {
+    expect(
+      extractNewCompanyName({
+        fromAddress: "talent@monday.com",
+        subject: "Update",
+        body: "",
+      })
+    ).toBe("Monday");
+  });
+
+  it("refuses generic ATS domains with no other signal", () => {
+    expect(
+      extractNewCompanyName({
+        fromAddress: "no-reply@greenhouse.io",
+        subject: "We received your application",
+        body: "",
+      })
+    ).toBeNull();
+  });
+});
+
+describe("extractPositionTitle", () => {
+  it("extracts 'application for the X position'", () => {
+    expect(
+      extractPositionTitle({
+        fromAddress: "a@b.com",
+        subject: "Your application for the Senior Backend Engineer position at Team8",
+        body: "",
+      })
+    ).toBe("Senior Backend Engineer");
+  });
+
+  it("extracts from body when subject is generic", () => {
+    expect(
+      extractPositionTitle({
+        fromAddress: "a@b.com",
+        subject: "Application received",
+        body: "Thank you for applying to the Platform Engineer role at Acme.",
+      })
+    ).toBe("Platform Engineer");
+  });
+
+  it("returns null when nothing matches", () => {
+    expect(
+      extractPositionTitle({ fromAddress: "a@b.com", subject: "hello", body: "world" })
+    ).toBeNull();
+  });
+});

@@ -13,18 +13,32 @@ import { getSettings, setSetting, SETTING_KEYS } from "@/lib/settings";
 import {
   classifyEmail,
   extractCompany,
+  extractNewCompanyName,
+  extractPositionTitle,
   looksJobRelated,
   statusForClassification,
   shouldAdvance,
+  type EmailFacts,
 } from "@/core/emailClassifier";
-import type { AppStatus, EmailClass } from "@prisma/client";
+import type { AppStatus, EmailClass, Prisma } from "@prisma/client";
 
 export interface EmailSyncResult {
   scanned: number;
   jobRelated: number;
   linked: number;
+  created: number; // applications auto-created from confirmation emails
   statusChanges: { company: string; title: string; from: string; to: string }[];
 }
+
+/** Only auto-create applications from recent mail — not a month of history. */
+const AUTO_CREATE_WINDOW_MS = 7 * 86400_000;
+const AUTO_CREATE_CLASSES = new Set([
+  "APPLICATION_RECEIVED",
+  "ASSESSMENT",
+  "INTERVIEW",
+  "OFFER",
+  "REJECTION",
+]);
 
 export async function runEmailSync(): Promise<EmailSyncResult> {
   const cfg = await getSettings([
@@ -53,7 +67,13 @@ export async function runEmailSync(): Promise<EmailSyncResult> {
     logger: false,
   });
 
-  const result: EmailSyncResult = { scanned: 0, jobRelated: 0, linked: 0, statusChanges: [] };
+  const result: EmailSyncResult = {
+    scanned: 0,
+    jobRelated: 0,
+    linked: 0,
+    created: 0,
+    statusChanges: [],
+  };
 
   await client.connect();
   try {
@@ -99,6 +119,7 @@ export async function runEmailSync(): Promise<EmailSyncResult> {
       if (already) continue;
 
       const fromAddress = msg.envelope?.from?.[0]?.address ?? "";
+      const fromName = msg.envelope?.from?.[0]?.name ?? "";
       const subject = msg.envelope?.subject ?? "";
       let body = "";
       if (msg.source) {
@@ -110,65 +131,9 @@ export async function runEmailSync(): Promise<EmailSyncResult> {
         }
       }
 
-      const facts = { fromAddress, subject, body };
-      if (!looksJobRelated(facts)) continue;
-      result.jobRelated++;
-
-      const classification = classifyEmail(facts);
-      const companyName = extractCompany(facts, companyNames);
-      const application = companyName
-        ? applications.find(
-            (a) => a.job.companyName.toLowerCase() === companyName.toLowerCase()
-          )
-        : undefined;
-
-      const email = await prisma.emailMessage.create({
-        data: {
-          imapUid,
-          fromAddress,
-          subject: subject.slice(0, 500),
-          snippet: body.slice(0, 300),
-          classification: classification as EmailClass,
-          receivedAt: msg.envelope?.date ?? new Date(),
-          applicationId: application?.id ?? null,
-        },
-      });
-
-      if (!application) continue;
-      result.linked++;
-
-      await prisma.applicationEvent.create({
-        data: {
-          applicationId: application.id,
-          type: "email",
-          description: `Email (${classification.toLowerCase().replace(/_/g, " ")}): ${subject.slice(0, 200)}`,
-          source: "EMAIL",
-          occurredAt: email.receivedAt,
-        },
-      });
-
-      const proposed = statusForClassification(classification);
-      if (proposed && shouldAdvance(application.status, proposed)) {
-        await prisma.application.update({
-          where: { id: application.id },
-          data: { status: proposed as AppStatus },
-        });
-        await prisma.applicationEvent.create({
-          data: {
-            applicationId: application.id,
-            type: "status_change",
-            description: `Status ${application.status} → ${proposed} (from email)`,
-            source: "EMAIL",
-          },
-        });
-        result.statusChanges.push({
-          company: application.job.companyName,
-          title: application.job.title,
-          from: application.status,
-          to: proposed,
-        });
-        application.status = proposed as AppStatus; // keep local view current
-      }
+      const facts = { fromAddress, fromName, subject, body };
+      const receivedAt = msg.envelope?.date ?? new Date();
+      await processJobEmail(facts, receivedAt, imapUid, { applications, companyNames }, result);
     }
 
     if (maxUid > lastUid) {
@@ -179,4 +144,140 @@ export async function runEmailSync(): Promise<EmailSyncResult> {
   }
 
   return result;
+}
+
+type AppWithJob = Prisma.ApplicationGetPayload<{ include: { job: true } }>;
+
+interface SyncCaches {
+  applications: AppWithJob[];
+  companyNames: string[];
+}
+
+/**
+ * Classify one email, link it to (or auto-create) an application, record the
+ * timeline event, and advance the pipeline status. Exported so the flow can be
+ * integration-tested without an IMAP server.
+ */
+export async function processJobEmail(
+  facts: EmailFacts,
+  receivedAt: Date,
+  imapUid: string,
+  caches: SyncCaches,
+  result: EmailSyncResult
+): Promise<void> {
+  const { applications, companyNames } = caches;
+  if (!looksJobRelated(facts)) return;
+  result.jobRelated++;
+
+  const classification = classifyEmail(facts);
+  const companyName = extractCompany(facts, companyNames);
+  let application = companyName
+    ? applications.find((a) => a.job.companyName.toLowerCase() === companyName.toLowerCase())
+    : undefined;
+
+  // Auto-create: an application email for a company not in the pipeline yet
+  // (e.g. you applied on their site today) becomes a tracked application,
+  // and the company joins the watchlist.
+  if (
+    !application &&
+    AUTO_CREATE_CLASSES.has(classification) &&
+    Date.now() - receivedAt.getTime() < AUTO_CREATE_WINDOW_MS
+  ) {
+    const newName = companyName ?? extractNewCompanyName(facts);
+    if (newName) {
+      const company = await prisma.company.upsert({
+        where: { name: newName },
+        create: { name: newName, notes: "Added automatically from application email" },
+        update: {},
+      });
+      const title = extractPositionTitle(facts) ?? `Application at ${newName}`;
+      const dedupeKey = `email:${newName.toLowerCase()}:${title.toLowerCase()}`;
+      const job =
+        (await prisma.job.findUnique({ where: { dedupeKey } })) ??
+        (await prisma.job.create({
+          data: {
+            dedupeKey,
+            source: "EMAIL",
+            url: "",
+            title: title.slice(0, 500),
+            companyName: newName,
+            companyId: company.id,
+            postedAt: receivedAt,
+          },
+        }));
+      const existingApp = await prisma.application.findUnique({
+        where: { jobId: job.id },
+        include: { job: true },
+      });
+      application =
+        existingApp ??
+        (await prisma.application.create({
+          data: {
+            jobId: job.id,
+            status: "APPLIED",
+            appliedAt: receivedAt,
+            events: {
+              create: {
+                type: "status_change",
+                description: `Application detected from email (${newName})`,
+                source: "EMAIL",
+                occurredAt: receivedAt,
+              },
+            },
+          },
+          include: { job: true },
+        }));
+      if (!existingApp) result.created++;
+      applications.push(application);
+      if (!companyNames.includes(newName)) companyNames.push(newName);
+    }
+  }
+
+  const email = await prisma.emailMessage.create({
+    data: {
+      imapUid,
+      fromAddress: facts.fromAddress,
+      subject: facts.subject.slice(0, 500),
+      snippet: facts.body.slice(0, 300),
+      classification: classification as EmailClass,
+      receivedAt,
+      applicationId: application?.id ?? null,
+    },
+  });
+
+  if (!application) return;
+  result.linked++;
+
+  await prisma.applicationEvent.create({
+    data: {
+      applicationId: application.id,
+      type: "email",
+      description: `Email (${classification.toLowerCase().replace(/_/g, " ")}): ${facts.subject.slice(0, 200)}`,
+      source: "EMAIL",
+      occurredAt: email.receivedAt,
+    },
+  });
+
+  const proposed = statusForClassification(classification);
+  if (proposed && shouldAdvance(application.status, proposed)) {
+    await prisma.application.update({
+      where: { id: application.id },
+      data: { status: proposed as AppStatus },
+    });
+    await prisma.applicationEvent.create({
+      data: {
+        applicationId: application.id,
+        type: "status_change",
+        description: `Status ${application.status} → ${proposed} (from email)`,
+        source: "EMAIL",
+      },
+    });
+    result.statusChanges.push({
+      company: application.job.companyName,
+      title: application.job.title,
+      from: application.status,
+      to: proposed,
+    });
+    application.status = proposed as AppStatus; // keep local view current
+  }
 }

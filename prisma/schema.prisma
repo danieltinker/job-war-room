@@ -49,6 +49,7 @@ model Company {
   name          String
   website       String   @default("")
   linkedinSlug  String   @default("") // linkedin.com/company/<slug>
+  careersUrl    String   @default("") // scraped directly (auto-detects embedded ATS boards)
   ats           AtsType  @default(NONE)
   atsIdentifier String   @default("") // greenhouse board token / lever site / ashby org
   active        Boolean  @default(true)
@@ -86,6 +87,8 @@ enum JobSource {
   GREENHOUSE
   LEVER
   ASHBY
+  CAREERS // scraped from a company careers page
+  EMAIL // auto-created from an application email
   MANUAL
 }
 

@@ -94,9 +94,13 @@ export default async function JobsPage({ searchParams }: { searchParams: SearchP
               return (
                 <tr key={job.id}>
                   <td className="td max-w-sm">
-                    <a href={job.url} target="_blank" className="font-medium text-white hover:text-accent">
-                      {job.title}
-                    </a>
+                    {job.url ? (
+                      <a href={job.url} target="_blank" className="font-medium text-white hover:text-accent">
+                        {job.title}
+                      </a>
+                    ) : (
+                      <span className="font-medium text-white">{job.title}</span>
+                    )}
                   </td>
                   <td className="td">{job.companyName}</td>
                   <td className="td text-slate-400">{job.location || "—"}</td>

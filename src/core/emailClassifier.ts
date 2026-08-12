@@ -15,6 +15,7 @@ export type EmailClassification =
 
 export interface EmailFacts {
   fromAddress: string;
+  fromName?: string; // display name on the From header, e.g. "Team8 Careers"
   subject: string;
   body: string;
 }
@@ -155,6 +156,73 @@ export function extractCompany(facts: EmailFacts, knownCompanies: string[]): str
     }
   }
   return best;
+}
+
+/** ATS/mailer domains that never identify the actual employer. */
+const GENERIC_SENDER_DOMAINS =
+  /greenhouse|lever\.co|ashbyhq|comeet|workday|myworkday|smartrecruiters|icims|jobvite|bamboohr|recruitee|workable|linkedin|indeed|glassdoor|gmail|outlook|hotmail|yahoo|sendgrid|mailgun|amazonses/i;
+
+const GENERIC_NAME_WORDS =
+  /\b(careers?|recruit(?:ing|ment)?|talent(?:\s+acquisition)?|jobs?|hr|hiring|people(?:\s+ops)?|no-?reply|notifications?|team)\b/gi;
+
+/**
+ * Best-effort employer name for an email that matches no known company —
+ * used to auto-create applications from confirmation emails.
+ */
+export function extractNewCompanyName(facts: EmailFacts): string | null {
+  const clean = (s: string) =>
+    s
+      .replace(GENERIC_NAME_WORDS, " ")
+      .replace(/[|@·–—-]+$/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  // 1) Subject patterns: "your application to X", "thank you for applying to X"
+  const subjectPatterns = [
+    /(?:your |the )?application (?:to|at|with|for a position at) ([A-Za-z0-9][\w .&'-]{1,40})/i,
+    /(?:thank(?:s| you)) for applying (?:to|at) ([A-Za-z0-9][\w .&'-]{1,40})/i,
+    /interest in (?:joining )?([A-Za-z0-9][\w .&'-]{1,40})/i,
+  ];
+  for (const p of subjectPatterns) {
+    const m = facts.subject.match(p);
+    if (m) {
+      const name = clean(m[1].replace(/[.!,;:]+$/, ""));
+      if (name.length >= 2) return name;
+    }
+  }
+
+  // 2) From display name: "Team8 Careers <no-reply@comeet.co>" → "Team8"
+  if (facts.fromName) {
+    const name = clean(facts.fromName);
+    if (name.length >= 2 && name.length <= 40 && !/@/.test(name)) return name;
+  }
+
+  // 3) Sender domain, unless it's a generic ATS/mailer domain
+  const domain = facts.fromAddress.split("@")[1]?.toLowerCase() ?? "";
+  if (domain && !GENERIC_SENDER_DOMAINS.test(domain)) {
+    const label = domain.split(".").slice(-2, -1)[0] ?? "";
+    if (label.length >= 2) return label.charAt(0).toUpperCase() + label.slice(1);
+  }
+  return null;
+}
+
+/** Best-effort position title from an application email, or null. */
+export function extractPositionTitle(facts: EmailFacts): string | null {
+  const text = `${facts.subject}\n${facts.body.slice(0, 1000)}`;
+  const patterns = [
+    /application for (?:the )?(?:position of )?["“]?([^"”,\n]{3,80}?)["”]? (?:position|role|at|with)\b/i,
+    /applying (?:for|to) (?:the )?["“]?([^"”,\n]{3,80}?)["”]? (?:position|role)\b/i,
+    /application (?:to|for) the ([^,\n]{3,80}?) (?:position|role|opening)\b/i,
+    /position[:\s]+["“]?([^"”,\n]{3,80})["”]?(?:\n|$)/i,
+  ];
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (m) {
+      const title = m[1].replace(/\s+/g, " ").trim();
+      if (title.length >= 3) return title;
+    }
+  }
+  return null;
 }
 
 /** Map an email classification to the pipeline status it implies (or null). */
