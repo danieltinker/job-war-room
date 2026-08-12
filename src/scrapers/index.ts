@@ -1,8 +1,12 @@
 /**
  * Scrape orchestrator: runs one full sweep —
- *   1. every active watchlist company (its ATS board and/or LinkedIn),
+ *   1. every active watchlist company (ATS board, careers page, LinkedIn),
  *   2. every active position profile as a LinkedIn keyword search,
  * then upserts jobs, scores them against profiles, and records matches.
+ *
+ * Every scrape attempt is recorded as a SweepSource row (status, jobs found,
+ * error, duration) so the dashboard can show exactly what happened — nothing
+ * fails silently.
  */
 import { prisma } from "@/lib/db";
 import { getSetting, SETTING_KEYS } from "@/lib/settings";
@@ -11,75 +15,62 @@ import { dedupeKeyFor } from "@/core/normalize";
 import { scrapeGreenhouse } from "./greenhouse";
 import { scrapeLever } from "./lever";
 import { scrapeAshby } from "./ashby";
-import { scrapeCareersPage } from "./careers";
 import { scrapeSmartrecruiters } from "./smartrecruiters";
+import { scrapeCareersPage } from "./careers";
 import { searchLinkedinJobs, enrichDescriptions } from "./linkedin";
 import type { ScrapedJob, ScrapeContext } from "./types";
+import type { PositionProfile, Prisma } from "@prisma/client";
 
 export interface SweepResult {
   jobsFound: number;
   newJobs: number;
   newMatches: number;
+  companiesScanned: number;
+  queriesRun: number;
+  jobsScored: number;
   errors: string[];
   newMatchSummaries: { title: string; company: string; score: number; url: string }[];
 }
 
-async function scrapeCompany(
-  company: {
-    id: string;
-    name: string;
-    ats: string;
-    atsIdentifier: string;
-    linkedinSlug: string;
-    careersUrl: string;
-  },
-  ctx: ScrapeContext,
-  errors: string[]
-): Promise<ScrapedJob[]> {
-  const jobs: ScrapedJob[] = [];
+/** Runs one scrape attempt, times it, and records a SweepSource row. */
+async function recordSource(
+  runId: string | null,
+  kind: string,
+  label: string,
+  fn: () => Promise<{ jobs: ScrapedJob[]; error?: string | null }>
+): Promise<{ jobs: ScrapedJob[]; error: string | null }> {
+  const startedAt = Date.now();
+  let jobs: ScrapedJob[] = [];
+  let error: string | null = null;
   try {
-    if (company.ats === "GREENHOUSE" && company.atsIdentifier) {
-      jobs.push(...(await scrapeGreenhouse(company.atsIdentifier, company.name)));
-    } else if (company.ats === "LEVER" && company.atsIdentifier) {
-      jobs.push(...(await scrapeLever(company.atsIdentifier, company.name)));
-    } else if (company.ats === "ASHBY" && company.atsIdentifier) {
-      jobs.push(...(await scrapeAshby(company.atsIdentifier, company.name)));
-    } else if (company.ats === "SMARTRECRUITERS" && company.atsIdentifier) {
-      jobs.push(...(await scrapeSmartrecruiters(company.atsIdentifier, company.name)));
-    }
+    const out = await fn();
+    jobs = out.jobs;
+    error = out.error ?? null;
   } catch (e) {
-    errors.push(`${company.name} (ATS): ${e instanceof Error ? e.message : String(e)}`);
+    error = e instanceof Error ? e.message : String(e);
   }
-
-  // Direct careers-page scrape (auto-detects embedded ATS boards, JSON-LD, links)
-  if (company.careersUrl) {
-    try {
-      jobs.push(...(await scrapeCareersPage(company.careersUrl, company.name)));
-    } catch (e) {
-      errors.push(`${company.name} (careers): ${e instanceof Error ? e.message : String(e)}`);
-    }
+  if (runId) {
+    await prisma.sweepSource.create({
+      data: {
+        runId,
+        kind,
+        label: label.slice(0, 300),
+        status: error ? "FAILED" : jobs.length > 0 ? "OK" : "EMPTY",
+        jobsFound: jobs.length,
+        error: (error ?? "").slice(0, 1000),
+        durationMs: Date.now() - startedAt,
+      },
+    });
   }
-
-  // LinkedIn sweep for the company (guest search filtered by company name)
-  if (company.linkedinSlug || jobs.length === 0) {
-    try {
-      const liJobs = await searchLinkedinJobs(
-        { keywords: company.name, companyName: company.name, postedInDays: 14 },
-        ctx
-      );
-      jobs.push(...liJobs);
-    } catch (e) {
-      errors.push(`${company.name} (LinkedIn): ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-  return jobs;
+  return { jobs, error };
 }
 
-export async function runScrapeSweep(): Promise<SweepResult> {
+export async function runScrapeSweep(runId: string | null = null): Promise<SweepResult> {
   const ctx: ScrapeContext = {
     linkedinLiAt: await getSetting(SETTING_KEYS.linkedinLiAt),
   };
   const errors: string[] = [];
+  let queriesRun = 0;
 
   const [companies, profiles] = await Promise.all([
     prisma.company.findMany({ where: { active: true } }),
@@ -87,29 +78,86 @@ export async function runScrapeSweep(): Promise<SweepResult> {
   ]);
 
   const collected: ScrapedJob[] = [];
+  const note = (label: string, error: string | null) => {
+    if (error) errors.push(`${label}: ${error}`);
+  };
 
-  // 1) Watchlist companies
+  // ── 1) Watchlist companies ────────────────────────────────────────────
   for (const company of companies) {
-    collected.push(...(await scrapeCompany(company, ctx, errors)));
+    // Structured ATS board (most reliable)
+    if (company.ats !== "NONE" && company.atsIdentifier) {
+      queriesRun++;
+      const label = `${company.name} (${company.ats.toLowerCase()}: ${company.atsIdentifier})`;
+      const { jobs, error } = await recordSource(runId, "ats", label, async () => {
+        switch (company.ats) {
+          case "GREENHOUSE":
+            return { jobs: await scrapeGreenhouse(company.atsIdentifier, company.name) };
+          case "LEVER":
+            return { jobs: await scrapeLever(company.atsIdentifier, company.name) };
+          case "ASHBY":
+            return { jobs: await scrapeAshby(company.atsIdentifier, company.name) };
+          case "SMARTRECRUITERS":
+            return { jobs: await scrapeSmartrecruiters(company.atsIdentifier, company.name) };
+          default:
+            return { jobs: [] };
+        }
+      });
+      collected.push(...jobs);
+      note(label, error);
+    }
+
+    // Direct careers page (auto-detects embedded boards)
+    if (company.careersUrl) {
+      queriesRun++;
+      const label = `${company.name} (careers page)`;
+      const { jobs, error } = await recordSource(runId, "careers", label, async () => ({
+        jobs: await scrapeCareersPage(company.careersUrl, company.name),
+      }));
+      collected.push(...jobs);
+      note(label, error);
+    }
+
+    // LinkedIn company sweep
+    queriesRun++;
+    const liLabel = `${company.name} (linkedin search)`;
+    const { jobs: liJobs, error: liError } = await recordSource(
+      runId,
+      "linkedin-company",
+      liLabel,
+      async () => {
+        const result = await searchLinkedinJobs(
+          { keywords: company.name, companyName: company.name, postedInDays: 14 },
+          ctx
+        );
+        return { jobs: result.jobs, error: result.error };
+      }
+    );
+    collected.push(...liJobs);
+    note(liLabel, liError);
   }
 
-  // 2) Profile-driven LinkedIn searches (keywords + locations)
+  // ── 2) Profile-driven LinkedIn searches ───────────────────────────────
   for (const profile of profiles) {
-    const keywordQuery = [...profile.titleKeywords, ...profile.keywords]
-      .slice(0, 4)
-      .join(" ");
+    const keywordQuery = [...profile.titleKeywords, ...profile.keywords].slice(0, 4).join(" ");
     if (!keywordQuery) continue;
     const locations = profile.locations.length > 0 ? profile.locations : [""];
     for (const location of locations.slice(0, 3)) {
-      try {
-        const found = await searchLinkedinJobs(
-          { keywords: keywordQuery, location: location || undefined, postedInDays: 7, remote: profile.remoteOk && !location },
+      queriesRun++;
+      const label = `profile: ${profile.name}${location ? ` @ ${location}` : " (anywhere)"}`;
+      const { jobs, error } = await recordSource(runId, "linkedin-profile", label, async () => {
+        const result = await searchLinkedinJobs(
+          {
+            keywords: keywordQuery,
+            location: location || undefined,
+            postedInDays: 7,
+            remote: profile.remoteOk && !location,
+          },
           ctx
         );
-        collected.push(...found);
-      } catch (e) {
-        errors.push(`profile "${profile.name}": ${e instanceof Error ? e.message : String(e)}`);
-      }
+        return { jobs: result.jobs, error: result.error };
+      });
+      collected.push(...jobs);
+      note(label, error);
     }
   }
 
@@ -117,7 +165,7 @@ export async function runScrapeSweep(): Promise<SweepResult> {
   const needsEnrichment = collected.filter((j) => j.source === "LINKEDIN" && !j.description);
   await enrichDescriptions(needsEnrichment, ctx, 40);
 
-  // Upsert into the database
+  // ── Upsert into the database ──────────────────────────────────────────
   const companyByName = new Map(companies.map((c) => [c.name.toLowerCase(), c.id]));
   let newJobs = 0;
   const upsertedIds: string[] = [];
@@ -131,7 +179,6 @@ export async function runScrapeSweep(): Promise<SweepResult> {
     const existing = await prisma.job.findUnique({ where: { dedupeKey } });
     if (existing) {
       upsertedIds.push(existing.id);
-      // Backfill description if we have one now and didn't before
       if (!existing.description && job.description) {
         await prisma.job.update({
           where: { id: existing.id },
@@ -158,24 +205,41 @@ export async function runScrapeSweep(): Promise<SweepResult> {
     upsertedIds.push(created.id);
   }
 
-  // Score all touched jobs against all active profiles
-  const { newMatches, newMatchSummaries } = await scoreJobs(upsertedIds, profiles);
+  // ── Score all touched jobs against all active profiles ────────────────
+  const { newMatches, newMatchSummaries, jobsScored } = await scoreJobs(upsertedIds, profiles);
 
-  return { jobsFound: collected.length, newJobs, newMatches, errors, newMatchSummaries };
+  return {
+    jobsFound: collected.length,
+    newJobs,
+    newMatches,
+    companiesScanned: companies.length,
+    queriesRun,
+    jobsScored,
+    errors,
+    newMatchSummaries,
+  };
 }
 
 export async function scoreJobs(
   jobIds: string[],
-  profiles: Awaited<ReturnType<typeof prisma.positionProfile.findMany>>
-): Promise<{ newMatches: number; newMatchSummaries: SweepResult["newMatchSummaries"] }> {
+  profiles: PositionProfile[]
+): Promise<{
+  newMatches: number;
+  newMatchSummaries: SweepResult["newMatchSummaries"];
+  jobsScored: number;
+}> {
   let newMatches = 0;
   const newMatchSummaries: SweepResult["newMatchSummaries"] = [];
   if (jobIds.length === 0 || profiles.length === 0) {
-    return { newMatches, newMatchSummaries };
+    return { newMatches, newMatchSummaries, jobsScored: 0 };
   }
 
   const jobs = await prisma.job.findMany({ where: { id: { in: jobIds } } });
   for (const job of jobs) {
+    // Full breakdown per profile — persisted so the UI can explain every score.
+    const detail: { profile: string; score: number; matched: string[]; reason: string }[] = [];
+    let bestScore = 0;
+
     for (const profile of profiles) {
       const result = scoreJob(
         { title: job.title, description: job.description, location: job.location },
@@ -188,7 +252,15 @@ export async function scoreJobs(
           minScore: profile.minScore,
         }
       );
+      detail.push({
+        profile: profile.name,
+        score: result.score,
+        matched: result.matchedKeywords,
+        reason: result.reason,
+      });
+      if (result.score > bestScore) bestScore = result.score;
       if (!result.suggested) continue;
+
       const existing = await prisma.match.findUnique({
         where: { jobId_profileId: { jobId: job.id, profileId: profile.id } },
       });
@@ -209,11 +281,19 @@ export async function scoreJobs(
         url: job.url,
       });
     }
+
+    await prisma.job.update({
+      where: { id: job.id },
+      data: {
+        bestScore,
+        scoreDetail: detail.sort((a, b) => b.score - a.score) as unknown as Prisma.InputJsonValue,
+      },
+    });
   }
-  return { newMatches, newMatchSummaries };
+  return { newMatches, newMatchSummaries, jobsScored: jobs.length };
 }
 
-/** Re-score every job that has no match yet (used after profile edits). */
+/** Re-score every job (used after profile edits). */
 export async function rescoreAllJobs(): Promise<number> {
   const profiles = await prisma.positionProfile.findMany({ where: { active: true } });
   const jobs = await prisma.job.findMany({ select: { id: true } });

@@ -108,6 +108,8 @@ model Job {
   description  String      @default("")
   postedAt     DateTime?
   discoveredAt DateTime    @default(now())
+  bestScore    Int? // highest score across profiles at last scoring
+  scoreDetail  Json? // per-profile breakdown: [{profile, score, matched, reason}]
   matches      Match[]
   application  Application?
 
@@ -226,15 +228,41 @@ enum RunStatus {
 }
 
 model ScrapeRun {
-  id          String    @id @default(cuid())
-  kind        String // "scrape" | "email-sync" | "digest"
-  status      RunStatus @default(RUNNING)
-  startedAt   DateTime  @default(now())
-  finishedAt  DateTime?
-  jobsFound   Int       @default(0)
-  newJobs     Int       @default(0)
-  newMatches  Int       @default(0)
-  detail      String    @default("")
+  id               String    @id @default(cuid())
+  kind             String // "scrape" | "email-sync" | "digest"
+  status           RunStatus @default(RUNNING)
+  startedAt        DateTime  @default(now())
+  finishedAt       DateTime?
+  jobsFound        Int       @default(0)
+  newJobs          Int       @default(0)
+  newMatches       Int       @default(0)
+  companiesScanned Int       @default(0)
+  queriesRun       Int       @default(0)
+  jobsScored       Int       @default(0)
+  detail           String    @default("")
+  sources          SweepSource[]
 
   @@index([kind, startedAt])
+}
+
+enum SourceStatus {
+  OK
+  EMPTY
+  FAILED
+}
+
+/// One row per scrape attempt within a sweep: a company's ATS board, a
+/// company's careers page, a LinkedIn query — everything the sweep touched.
+model SweepSource {
+  id         String       @id @default(cuid())
+  runId      String
+  run        ScrapeRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  kind       String // "ats" | "careers" | "linkedin-company" | "linkedin-profile"
+  label      String // e.g. "Wiz (greenhouse: wizinc)" or "profile: Backend @ Israel"
+  status     SourceStatus @default(OK)
+  jobsFound  Int          @default(0)
+  error      String       @default("")
+  durationMs Int          @default(0)
+
+  @@index([runId])
 }

@@ -22,12 +22,20 @@ const log = (msg: string) => console.log(`[worker ${new Date().toISOString()}] $
 
 async function recordRun<T>(
   kind: string,
-  fn: () => Promise<T>,
-  summarize: (r: T) => { jobsFound?: number; newJobs?: number; newMatches?: number; detail?: string }
+  fn: (runId: string) => Promise<T>,
+  summarize: (r: T) => {
+    jobsFound?: number;
+    newJobs?: number;
+    newMatches?: number;
+    companiesScanned?: number;
+    queriesRun?: number;
+    jobsScored?: number;
+    detail?: string;
+  }
 ): Promise<T> {
   const run = await prisma.scrapeRun.create({ data: { kind } });
   try {
-    const result = await fn();
+    const result = await fn(run.id);
     const s = summarize(result);
     await prisma.scrapeRun.update({
       where: { id: run.id },
@@ -37,6 +45,9 @@ async function recordRun<T>(
         jobsFound: s.jobsFound ?? 0,
         newJobs: s.newJobs ?? 0,
         newMatches: s.newMatches ?? 0,
+        companiesScanned: s.companiesScanned ?? 0,
+        queriesRun: s.queriesRun ?? 0,
+        jobsScored: s.jobsScored ?? 0,
         detail: (s.detail ?? "").slice(0, 4000),
       },
     });
@@ -60,10 +71,13 @@ new Worker(
   QUEUE_NAMES.scrape,
   async () => {
     log("scrape sweep starting");
-    const result = await recordRun("scrape", runScrapeSweep, (r) => ({
+    const result = await recordRun("scrape", (runId) => runScrapeSweep(runId), (r) => ({
       jobsFound: r.jobsFound,
       newJobs: r.newJobs,
       newMatches: r.newMatches,
+      companiesScanned: r.companiesScanned,
+      queriesRun: r.queriesRun,
+      jobsScored: r.jobsScored,
       detail: r.errors.join("; "),
     }));
     log(`scrape done: ${result.jobsFound} found, ${result.newJobs} new, ${result.newMatches} matches`);
@@ -174,6 +188,12 @@ async function refreshSchedulesIfChanged() {
 
 async function main() {
   log("war room worker booting");
+  // A worker restart mid-sweep leaves runs stuck on RUNNING — close them out.
+  const stuck = await prisma.scrapeRun.updateMany({
+    where: { status: "RUNNING", startedAt: { lt: new Date(Date.now() - 90 * 60_000) } },
+    data: { status: "FAILED", finishedAt: new Date(), detail: "worker restarted mid-run" },
+  });
+  if (stuck.count > 0) log(`closed ${stuck.count} stale RUNNING run(s)`);
   const seededProfiles = await seedStarterProfiles();
   if (seededProfiles > 0) log(`seeded ${seededProfiles} starter position profile(s)`);
   const seededCompanies = await seedFavoriteCompanies();

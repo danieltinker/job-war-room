@@ -89,8 +89,13 @@ export default async function JobsPage({ searchParams }: { searchParams: SearchP
               </tr>
             )}
             {jobs.map((job) => {
-              const best = job.matches[0];
               const openMatch = job.matches.find((m) => m.status === "SUGGESTED");
+              const detail = (job.scoreDetail ?? []) as {
+                profile: string;
+                score: number;
+                matched: string[];
+                reason: string;
+              }[];
               return (
                 <tr key={job.id}>
                   <td className="td max-w-sm">
@@ -101,13 +106,31 @@ export default async function JobsPage({ searchParams }: { searchParams: SearchP
                     ) : (
                       <span className="font-medium text-white">{job.title}</span>
                     )}
+                    {detail.length > 0 && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs text-slate-500 hover:text-accent">
+                          score breakdown
+                        </summary>
+                        <ul className="mt-1 space-y-0.5 text-xs text-slate-400">
+                          {detail.map((d) => (
+                            <li key={d.profile}>
+                              <span className="text-slate-300">{d.profile}</span>:{" "}
+                              <span className="font-mono">{d.score}</span>
+                              {d.matched.length > 0
+                                ? ` — ${d.matched.join(", ")}`
+                                : ` — ${d.reason}`}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
                   </td>
                   <td className="td">{job.companyName}</td>
                   <td className="td text-slate-400">{job.location || "—"}</td>
                   <td className="td text-xs uppercase text-slate-500">{job.source.toLowerCase()}</td>
                   <td className="td">
-                    {best ? (
-                      <span className="font-mono font-semibold text-accent">{best.score}%</span>
+                    {job.bestScore != null && job.bestScore > 0 ? (
+                      <span className="font-mono font-semibold text-accent">{job.bestScore}%</span>
                     ) : (
                       <span className="text-slate-600">—</span>
                     )}

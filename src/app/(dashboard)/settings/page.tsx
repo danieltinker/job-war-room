@@ -2,6 +2,7 @@ import { formatDistanceToNow } from "date-fns";
 import { prisma } from "@/lib/db";
 import { SettingsForm } from "@/components/SettingsForm";
 import { WhatsAppPanel } from "@/components/WhatsAppPanel";
+import { LinkedinTest } from "@/components/LinkedinTest";
 import { RunNowButton } from "@/components/RunNowButton";
 import { StatusBadge } from "@/components/StatusBadge";
 
@@ -30,6 +31,14 @@ export default async function SettingsPage() {
       </header>
 
       <WhatsAppPanel />
+      <section className="card space-y-3">
+        <h2 className="font-semibold text-white">🔬 Diagnostics</h2>
+        <p className="text-sm text-slate-400">
+          Runs one real LinkedIn query right now and shows exactly what came back — use it to
+          verify scanning works from this machine.
+        </p>
+        <LinkedinTest />
+      </section>
       <SettingsForm />
 
       <section className="card p-0">
@@ -55,7 +64,15 @@ export default async function SettingsPage() {
             )}
             {runs.map((r) => (
               <tr key={r.id} title={r.detail}>
-                <td className="td">{r.kind}</td>
+                <td className="td">
+                  {r.kind === "scrape" ? (
+                    <a href={`/sweeps/${r.id}`} className="text-accent hover:underline">
+                      {r.kind}
+                    </a>
+                  ) : (
+                    r.kind
+                  )}
+                </td>
                 <td className="td">
                   <StatusBadge status={r.status} />
                 </td>

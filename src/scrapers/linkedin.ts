@@ -25,7 +25,14 @@ const UA =
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function fetchWithRetry(url: string, ctx: ScrapeContext, attempts = 3): Promise<string | null> {
+interface FetchOutcome {
+  html: string | null;
+  /** Why the fetch produced nothing: "HTTP 429", "network: …" — null on success. */
+  error: string | null;
+}
+
+async function fetchWithRetry(url: string, ctx: ScrapeContext, attempts = 3): Promise<FetchOutcome> {
+  let lastError: string | null = null;
   for (let i = 0; i < attempts; i++) {
     try {
       const res = await fetch(url, {
@@ -37,16 +44,20 @@ async function fetchWithRetry(url: string, ctx: ScrapeContext, attempts = 3): Pr
         redirect: "follow",
       });
       if (res.status === 429 || res.status >= 500) {
+        lastError = `HTTP ${res.status}${res.status === 429 ? " (rate limited)" : ""}`;
         await sleep(4000 * (i + 1));
         continue;
       }
-      if (!res.ok) return null;
-      return await res.text();
-    } catch {
+      if (!res.ok) {
+        return { html: null, error: `HTTP ${res.status}${res.status === 999 ? " (blocked by LinkedIn)" : ""}` };
+      }
+      return { html: await res.text(), error: null };
+    } catch (e) {
+      lastError = `network: ${e instanceof Error ? e.message : String(e)}`;
       await sleep(2000 * (i + 1));
     }
   }
-  return null;
+  return { html: null, error: lastError ?? "unknown" };
 }
 
 function parseJobCards(html: string): ScrapedJob[] {
@@ -91,15 +102,26 @@ export interface LinkedinQuery {
   companyName?: string; // filter client-side by company
   remote?: boolean;
   postedInDays?: number; // f_TPR filter
+  maxPages?: number; // cap pagination (diagnostics use 1)
+}
+
+export interface LinkedinSearchResult {
+  jobs: ScrapedJob[];
+  /** Total cards parsed before company filtering — proves the scan worked. */
+  rawCount: number;
+  /** Set when a page fetch failed; jobs may still be partial. */
+  error: string | null;
 }
 
 /** Search LinkedIn jobs (logged-out guest endpoint, paginated). */
 export async function searchLinkedinJobs(
   query: LinkedinQuery,
   ctx: ScrapeContext
-): Promise<ScrapedJob[]> {
+): Promise<LinkedinSearchResult> {
   const all: ScrapedJob[] = [];
-  for (let page = 0; page < MAX_PAGES; page++) {
+  let error: string | null = null;
+  const pageCap = Math.min(query.maxPages ?? MAX_PAGES, MAX_PAGES);
+  for (let page = 0; page < pageCap; page++) {
     const params = new URLSearchParams({
       keywords: query.keywords,
       start: String(page * PAGE_SIZE),
@@ -108,9 +130,14 @@ export async function searchLinkedinJobs(
     if (query.postedInDays) params.set("f_TPR", `r${query.postedInDays * 86400}`);
     if (query.remote) params.set("f_WT", "2");
 
-    const html = await fetchWithRetry(`${GUEST_SEARCH}?${params}`, ctx);
-    if (!html) break;
-    const batch = parseJobCards(html);
+    const outcome = await fetchWithRetry(`${GUEST_SEARCH}?${params}`, ctx);
+    if (!outcome.html) {
+      // Only a first-page failure means the scan itself failed;
+      // later pages just end pagination.
+      if (page === 0) error = outcome.error;
+      break;
+    }
+    const batch = parseJobCards(outcome.html);
     if (batch.length === 0) break;
     all.push(...batch);
     if (batch.length < PAGE_SIZE) break;
@@ -125,11 +152,12 @@ export async function searchLinkedinJobs(
 
   // Dedupe by externalId within the run
   const seen = new Set<string>();
-  return filtered.filter((j) => {
+  const jobs = filtered.filter((j) => {
     if (seen.has(j.externalId)) return false;
     seen.add(j.externalId);
     return true;
   });
+  return { jobs, rawCount: all.length, error };
 }
 
 /** Fetch the full description for a single job posting (guest endpoint). */
@@ -137,7 +165,7 @@ export async function fetchLinkedinJobDescription(
   externalId: string,
   ctx: ScrapeContext
 ): Promise<string> {
-  const html = await fetchWithRetry(
+  const { html } = await fetchWithRetry(
     `${LINKEDIN_BASE}/jobs-guest/jobs/api/jobPosting/${externalId}`,
     ctx
   );
