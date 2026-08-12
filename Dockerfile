@@ -1,5 +1,6 @@
 # ── Base deps ────────────────────────────────────────────────────────────
 FROM node:22-alpine AS deps
+RUN apk add --no-cache openssl
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
@@ -7,6 +8,7 @@ RUN npm ci --no-audit --no-fund && npx prisma generate
 
 # ── Web build ────────────────────────────────────────────────────────────
 FROM node:22-alpine AS builder
+RUN apk add --no-cache openssl
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -14,6 +16,7 @@ RUN npx prisma generate && npm run build
 
 # ── Web runtime (Next.js standalone) ─────────────────────────────────────
 FROM node:22-alpine AS web
+RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup -S app && adduser -S app -G app
@@ -26,6 +29,7 @@ CMD ["node", "server.js"]
 
 # ── Worker runtime ───────────────────────────────────────────────────────
 FROM node:22-alpine AS worker
+RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup -S app && adduser -S app -G app
@@ -40,6 +44,7 @@ CMD ["npx", "tsx", "worker/index.ts"]
 
 # ── Migrator (runs prisma migrate deploy then exits) ─────────────────────
 FROM node:22-alpine AS migrate
+RUN apk add --no-cache openssl
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
