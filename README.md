@@ -17,6 +17,9 @@ Self-hosted mission control for your job hunt. One dashboard that:
   by company, and advances statuses automatically (never backwards; a full timeline is kept).
 - **Pings you on WhatsApp** — pair your own WhatsApp as a linked device (QR in Settings) and
   get a daily brief, instant match alerts, and status-change notifications.
+- **Runs from your phone** — reply in the WhatsApp chat to operate the war room remotely:
+  `/jobs` (top suggestions with apply links), `/applied N` (mark applied — attaches the
+  matching profile's default resume), `/dismiss N`, `/status`, `/help`.
 
 ## Stack
 
