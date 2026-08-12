@@ -84,16 +84,21 @@ async function startSocket(): Promise<void> {
       const err = lastDisconnect?.error as Boom | undefined;
       const statusCode = err?.output?.statusCode;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
+      // 515 is the expected one-time restart right after a successful QR
+      // pairing — a normal part of the handshake, not an error worth showing.
+      const routineRestart = statusCode === DisconnectReason.restartRequired;
       console.log(
         `[whatsapp] connection closed (status ${statusCode ?? "?"}): ${err?.message ?? "unknown"}`
       );
       sock = null;
       await deleteSetting(SETTING_KEYS.waQr);
       await setSetting(SETTING_KEYS.waStatus, "disconnected");
-      await setSetting(
-        SETTING_KEYS.waError,
-        `Connection closed (status ${statusCode ?? "?"}): ${err?.message ?? "unknown"}`
-      );
+      if (!routineRestart) {
+        await setSetting(
+          SETTING_KEYS.waError,
+          `Connection closed (status ${statusCode ?? "?"}): ${err?.message ?? "unknown"}`
+        );
+      }
       if (loggedOut) {
         // User unlinked the device — require a fresh pairing.
         await setSetting(SETTING_KEYS.waDesired, "disconnected");
