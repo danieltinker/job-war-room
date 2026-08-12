@@ -12,6 +12,7 @@ import { scrapeGreenhouse } from "./greenhouse";
 import { scrapeLever } from "./lever";
 import { scrapeAshby } from "./ashby";
 import { scrapeCareersPage } from "./careers";
+import { scrapeSmartrecruiters } from "./smartrecruiters";
 import { searchLinkedinJobs, enrichDescriptions } from "./linkedin";
 import type { ScrapedJob, ScrapeContext } from "./types";
 
@@ -43,6 +44,8 @@ async function scrapeCompany(
       jobs.push(...(await scrapeLever(company.atsIdentifier, company.name)));
     } else if (company.ats === "ASHBY" && company.atsIdentifier) {
       jobs.push(...(await scrapeAshby(company.atsIdentifier, company.name)));
+    } else if (company.ats === "SMARTRECRUITERS" && company.atsIdentifier) {
+      jobs.push(...(await scrapeSmartrecruiters(company.atsIdentifier, company.name)));
     }
   } catch (e) {
     errors.push(`${company.name} (ATS): ${e instanceof Error ? e.message : String(e)}`);

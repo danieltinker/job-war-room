@@ -12,6 +12,7 @@ import { stripHtml } from "@/core/normalize";
 import { scrapeGreenhouse } from "./greenhouse";
 import { scrapeLever } from "./lever";
 import { scrapeAshby } from "./ashby";
+import { scrapeSmartrecruiters } from "./smartrecruiters";
 import type { ScrapedJob } from "./types";
 
 const UA =
@@ -33,7 +34,7 @@ async function fetchHtml(url: string): Promise<string | null> {
 /** Detect an embedded/linked ATS board anywhere in the page source. */
 export function detectAts(
   html: string
-): { kind: "GREENHOUSE" | "LEVER" | "ASHBY"; identifier: string } | null {
+): { kind: "GREENHOUSE" | "LEVER" | "ASHBY" | "SMARTRECRUITERS"; identifier: string } | null {
   const gh =
     html.match(/boards(?:-api)?\.greenhouse\.io\/(?:v1\/boards\/)?(?:embed\/job_board\?for=)?([A-Za-z0-9_-]+)/) ??
     html.match(/job-boards\.greenhouse\.io\/([A-Za-z0-9_-]+)/);
@@ -44,6 +45,9 @@ export function detectAts(
 
   const ashby = html.match(/jobs\.ashbyhq\.com\/([A-Za-z0-9_-]+)/);
   if (ashby) return { kind: "ASHBY", identifier: ashby[1] };
+
+  const sr = html.match(/(?:careers|jobs)\.smartrecruiters\.com\/([A-Za-z0-9_-]+)/);
+  if (sr) return { kind: "SMARTRECRUITERS", identifier: sr[1] };
 
   return null;
 }
@@ -164,6 +168,7 @@ export async function scrapeCareersPage(url: string, companyName: string): Promi
   if (ats?.kind === "GREENHOUSE") return scrapeGreenhouse(ats.identifier, companyName);
   if (ats?.kind === "LEVER") return scrapeLever(ats.identifier, companyName);
   if (ats?.kind === "ASHBY") return scrapeAshby(ats.identifier, companyName);
+  if (ats?.kind === "SMARTRECRUITERS") return scrapeSmartrecruiters(ats.identifier, companyName);
 
   // 2) Structured data on the page itself
   const jsonLd = parseJsonLdJobs(html, url, companyName);

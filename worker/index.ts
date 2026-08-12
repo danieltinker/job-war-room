@@ -13,6 +13,7 @@ import { runEmailSync } from "@/services/emailSync";
 import { ensureWhatsapp, sendWhatsappText, stopWhatsapp } from "@/services/whatsapp";
 import { composeDigest, composeMatchAlert } from "@/services/digest";
 import { seedStarterProfiles } from "@/services/seedProfiles";
+import { seedFavoriteCompanies } from "@/services/seedCompanies";
 
 const connection = redisConnection();
 const TZ = process.env.TZ ?? "UTC";
@@ -173,8 +174,17 @@ async function refreshSchedulesIfChanged() {
 
 async function main() {
   log("war room worker booting");
-  const seeded = await seedStarterProfiles();
-  if (seeded > 0) log(`seeded ${seeded} starter position profile(s)`);
+  const seededProfiles = await seedStarterProfiles();
+  if (seededProfiles > 0) log(`seeded ${seededProfiles} starter position profile(s)`);
+  const seededCompanies = await seedFavoriteCompanies();
+  if (seededCompanies > 0) {
+    log(`seeded ${seededCompanies} favorite companies — queueing an immediate sweep`);
+    await new Queue(QUEUE_NAMES.scrape, { connection }).add(
+      "post-seed",
+      {},
+      { removeOnComplete: 100, removeOnFail: 100 }
+    );
+  }
   await setSetting(SETTING_KEYS.waStatus, "disconnected");
   await refreshSchedulesIfChanged();
   await ensureWhatsapp().catch((e) => log(`whatsapp: ${e}`));

@@ -19,6 +19,11 @@ describe("detectAts", () => {
       identifier: "linear",
     });
   });
+  it("detects SmartRecruiters career sites", () => {
+    expect(
+      detectAts('<a href="https://careers.smartrecruiters.com/paloaltonetworks2">Jobs</a>')
+    ).toEqual({ kind: "SMARTRECRUITERS", identifier: "paloaltonetworks2" });
+  });
   it("returns null for plain pages", () => {
     expect(detectAts("<html><body>Join us!</body></html>")).toBeNull();
   });

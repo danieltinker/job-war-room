@@ -12,6 +12,7 @@ import { Boom } from "@hapi/boom";
 import pino from "pino";
 import QRCode from "qrcode";
 import { getSetting, setSetting, deleteSetting, SETTING_KEYS } from "@/lib/settings";
+import { handleWaCommand } from "@/services/waCommands";
 
 const logger = pino({ level: "warn" });
 
@@ -67,6 +68,29 @@ async function startSocket(): Promise<void> {
   sock = s;
 
   s.ev.on("creds.update", saveCreds);
+
+  // Inbound commands from the configured number (works in the self-chat too:
+  // only "/"-prefixed messages are commands, and replies never start with "/").
+  s.ev.on("messages.upsert", async ({ messages, type }) => {
+    if (type !== "notify") return;
+    const target = (await getSetting(SETTING_KEYS.waTarget))?.replace(/[^0-9]/g, "");
+    if (!target) return;
+    for (const m of messages) {
+      if (m.key.remoteJid !== `${target}@s.whatsapp.net`) continue;
+      const text = (m.message?.conversation ?? m.message?.extendedTextMessage?.text ?? "").trim();
+      if (!text.startsWith("/")) continue;
+      try {
+        const reply = await handleWaCommand(text);
+        await sendWhatsappText(reply);
+      } catch (e) {
+        console.log(`[whatsapp] command failed: ${e instanceof Error ? e.message : e}`);
+        await sendWhatsappText("Something went wrong handling that command — try again.").catch(
+          () => {}
+        );
+      }
+    }
+  });
+
   s.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
     if (qr) {

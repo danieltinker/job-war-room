@@ -42,6 +42,7 @@ enum AtsType {
   GREENHOUSE
   LEVER
   ASHBY
+  SMARTRECRUITERS
 }
 
 model Company {
@@ -87,6 +88,7 @@ enum JobSource {
   GREENHOUSE
   LEVER
   ASHBY
+  SMARTRECRUITERS
   CAREERS // scraped from a company careers page
   EMAIL // auto-created from an application email
   MANUAL
