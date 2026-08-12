@@ -7,18 +7,22 @@
  * Setting table for the dashboard to render; once scanned, credentials are
  * persisted to WHATSAPP_AUTH_DIR and survive restarts.
  */
-import makeWASocket, {
-  DisconnectReason,
-  useMultiFileAuthState as loadMultiFileAuthState,
-  type WASocket,
-  type UserFacingSocketConfig,
-} from "@whiskeysockets/baileys";
+import type { WASocket, UserFacingSocketConfig } from "baileys";
 import { Boom } from "@hapi/boom";
 import pino from "pino";
 import QRCode from "qrcode";
 import { getSetting, setSetting, deleteSetting, SETTING_KEYS } from "@/lib/settings";
 
 const logger = pino({ level: "warn" });
+
+// baileys ≥7 is ESM-only; load it lazily via dynamic import so this module
+// stays usable from the CJS worker build.
+type BaileysModule = typeof import("baileys");
+let baileysModule: BaileysModule | null = null;
+async function baileys(): Promise<BaileysModule> {
+  if (!baileysModule) baileysModule = await import("baileys");
+  return baileysModule;
+}
 
 let sock: WASocket | null = null;
 let starting = false;
@@ -47,12 +51,16 @@ export async function ensureWhatsapp(): Promise<void> {
 }
 
 async function startSocket(): Promise<void> {
-  const { state, saveCreds } = await loadMultiFileAuthState(authDir());
+  const {
+    default: makeWASocket,
+    useMultiFileAuthState: loadAuthState,
+    DisconnectReason,
+  } = await baileys();
+  const { state, saveCreds } = await loadAuthState(authDir());
   const s = makeWASocket({
     auth: state,
     // pino's own types drifted from the version Baileys compiled against
     logger: logger as unknown as UserFacingSocketConfig["logger"],
-    printQRInTerminal: false,
     syncFullHistory: false,
     markOnlineOnConnect: false,
   });
@@ -65,17 +73,27 @@ async function startSocket(): Promise<void> {
       const dataUrl = await QRCode.toDataURL(qr, { margin: 1, width: 320 });
       await setSetting(SETTING_KEYS.waQr, dataUrl);
       await setSetting(SETTING_KEYS.waStatus, "waiting_qr");
+      await deleteSetting(SETTING_KEYS.waError);
     }
     if (connection === "open") {
       await deleteSetting(SETTING_KEYS.waQr);
+      await deleteSetting(SETTING_KEYS.waError);
       await setSetting(SETTING_KEYS.waStatus, "connected");
     }
     if (connection === "close") {
-      const statusCode = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode;
+      const err = lastDisconnect?.error as Boom | undefined;
+      const statusCode = err?.output?.statusCode;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
+      console.log(
+        `[whatsapp] connection closed (status ${statusCode ?? "?"}): ${err?.message ?? "unknown"}`
+      );
       sock = null;
       await deleteSetting(SETTING_KEYS.waQr);
       await setSetting(SETTING_KEYS.waStatus, "disconnected");
+      await setSetting(
+        SETTING_KEYS.waError,
+        `Connection closed (status ${statusCode ?? "?"}): ${err?.message ?? "unknown"}`
+      );
       if (loggedOut) {
         // User unlinked the device — require a fresh pairing.
         await setSetting(SETTING_KEYS.waDesired, "disconnected");

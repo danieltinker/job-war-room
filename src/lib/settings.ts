@@ -19,6 +19,7 @@ export const SETTING_KEYS = {
   waDesired: "whatsapp.desired", // "connected" | "disconnected"
   waStatus: "whatsapp.status", // "disconnected" | "waiting_qr" | "connected"
   waQr: "whatsapp.qr", // data-url of pairing QR while waiting
+  waError: "whatsapp.error", // last connection error, shown in the dashboard
   waTarget: "whatsapp.target", // phone number to send digests to, e.g. 9725...
   waNotifyMatches: "whatsapp.notifyMatches", // "true" | "false" — instant alerts
   // Scheduling

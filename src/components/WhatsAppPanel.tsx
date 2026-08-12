@@ -7,6 +7,7 @@ interface WaState {
   desired: string;
   qr: string | null;
   target: string | null;
+  error: string | null;
 }
 
 export function WhatsAppPanel() {
@@ -71,6 +72,12 @@ export function WhatsAppPanel() {
             WhatsApp → Settings → Linked devices → Link a device
           </p>
         </div>
+      )}
+
+      {state.error && state.status !== "connected" && (
+        <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          Last connection error: {state.error}
+        </p>
       )}
 
       <div className="flex gap-2">

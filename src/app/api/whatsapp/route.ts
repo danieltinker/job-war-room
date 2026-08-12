@@ -12,12 +12,14 @@ export async function GET() {
     SETTING_KEYS.waQr,
     SETTING_KEYS.waDesired,
     SETTING_KEYS.waTarget,
+    SETTING_KEYS.waError,
   ]);
   return NextResponse.json({
     status: s[SETTING_KEYS.waStatus] ?? "disconnected",
     desired: s[SETTING_KEYS.waDesired] ?? "disconnected",
     qr: s[SETTING_KEYS.waQr],
     target: s[SETTING_KEYS.waTarget],
+    error: s[SETTING_KEYS.waError],
   });
 }
 
