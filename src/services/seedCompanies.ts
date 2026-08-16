@@ -20,7 +20,7 @@ interface CompanySeed {
   atsIdentifier?: string;
 }
 
-const FAVORITES: CompanySeed[] = [
+export const FAVORITES: CompanySeed[] = [
   {
     name: "Dream",
     website: "https://dreamgroup.com",
@@ -124,7 +124,7 @@ const SEED_FLAG_V2 = "companies.seeded.v2";
  * embedded ATS board. Everything is editable in the Companies page; ambiguous
  * young startups are flagged in notes so their careers URL can be filled in.
  */
-const ISRAELI_CYBER_BATCH: CompanySeed[] = [
+export const ISRAELI_CYBER_BATCH: CompanySeed[] = [
   { name: "Mate", website: "", careersUrl: "", linkedinSlug: "" },
   { name: "Vega", website: "", careersUrl: "", linkedinSlug: "" },
   { name: "Legion", website: "", careersUrl: "", linkedinSlug: "" },
