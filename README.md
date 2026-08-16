@@ -102,6 +102,23 @@ npm run lint && npm run typecheck
 - Resume files live in Postgres (max 10 MB, PDF/Word/text only) — one volume to back up.
 - Run it on your own machine/VPS behind HTTPS (e.g. Caddy/Traefik) if exposed to the internet.
 
+## Automatic LinkedIn cookie refresh
+
+LinkedIn sessions expire; instead of pasting `li_at` by hand, run
+`scripts/refresh-linkedin-cookie.py` on a schedule. It reads the cookie from your
+browser's own cookie store (the session you already have — no automated login) and
+pushes it into the war room's encrypted settings.
+
+```bash
+pip3 install browser-cookie3          # once
+python3 scripts/refresh-linkedin-cookie.py   # test run (reads .env for credentials)
+```
+
+macOS: install `scripts/com.warroom.linkedin-cookie.plist` as a launchd agent (instructions
+inside the file) to refresh daily at 06:45, right before the 07:00 sweep. Linux: a cron line
+`45 6 * * * cd /path/to/job-war-room && python3 scripts/refresh-linkedin-cookie.py` does the same.
+The first run prompts for keychain access to read Chrome's encrypted cookies — allow it once.
+
 ## A word on LinkedIn scraping
 
 The LinkedIn connector uses the public logged-out jobs endpoint, politely throttled (~1 request

@@ -7,6 +7,9 @@ export interface ProfileRules {
   keywords: string[];
   titleKeywords: string[];
   excludeKeywords: string[];
+  /** Hard filters matched against the TITLE only — safe for words like
+   *  "sales" that legitimately appear inside engineering job descriptions. */
+  titleExcludes?: string[];
   locations: string[];
   remoteOk: boolean;
   minScore: number;
@@ -55,7 +58,12 @@ export function looksRemote(job: JobFacts): boolean {
 export function scoreJob(job: JobFacts, rules: ProfileRules): MatchResult {
   const text = `${job.title}\n${job.description}`;
 
-  // Hard exclusions first
+  // Hard exclusions first — title-only excludes, then full-text excludes
+  for (const ex of rules.titleExcludes ?? []) {
+    if (containsTerm(job.title, ex)) {
+      return { score: 0, matchedKeywords: [], suggested: false, reason: `title excluded: "${ex}"` };
+    }
+  }
   for (const ex of rules.excludeKeywords) {
     if (containsTerm(text, ex)) {
       return { score: 0, matchedKeywords: [], suggested: false, reason: `excluded: "${ex}"` };

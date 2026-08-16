@@ -126,7 +126,7 @@ export async function runScrapeSweep(runId: string | null = null): Promise<Sweep
       liLabel,
       async () => {
         const result = await searchLinkedinJobs(
-          { keywords: company.name, companyName: company.name, postedInDays: 14 },
+          { keywords: company.name, companyName: company.name, postedInDays: 14, maxPages: 2 },
           ctx
         );
         return { jobs: result.jobs, error: result.error };
@@ -234,6 +234,12 @@ export async function scoreJobs(
     return { newMatches, newMatchSummaries, jobsScored: 0 };
   }
 
+  const globalExcludesRaw = (await getSetting(SETTING_KEYS.globalTitleExcludes)) ?? "";
+  const globalTitleExcludes = globalExcludesRaw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   const jobs = await prisma.job.findMany({ where: { id: { in: jobIds } } });
   for (const job of jobs) {
     // Full breakdown per profile — persisted so the UI can explain every score.
@@ -247,6 +253,7 @@ export async function scoreJobs(
           keywords: profile.keywords,
           titleKeywords: profile.titleKeywords,
           excludeKeywords: profile.excludeKeywords,
+          titleExcludes: globalTitleExcludes,
           locations: profile.locations,
           remoteOk: profile.remoteOk,
           minScore: profile.minScore,

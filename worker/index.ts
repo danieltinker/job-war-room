@@ -8,7 +8,7 @@ import { Worker, Queue } from "bullmq";
 import { prisma } from "@/lib/db";
 import { redisConnection, QUEUE_NAMES } from "@/lib/queue";
 import { getSetting, setSetting, SETTING_KEYS } from "@/lib/settings";
-import { runScrapeSweep } from "@/scrapers";
+import { runScrapeSweep, rescoreAllJobs } from "@/scrapers";
 import { runEmailSync } from "@/services/emailSync";
 import { ensureWhatsapp, sendWhatsappText, stopWhatsapp } from "@/services/whatsapp";
 import { composeDigest, composeMatchAlert } from "@/services/digest";
@@ -195,7 +195,14 @@ async function main() {
   });
   if (stuck.count > 0) log(`closed ${stuck.count} stale RUNNING run(s)`);
   const seededProfiles = await seedStarterProfiles();
-  if (seededProfiles > 0) log(`seeded ${seededProfiles} starter position profile(s)`);
+  if (seededProfiles > 0) {
+    log(`seeded ${seededProfiles} position profile(s) — re-scoring existing jobs`);
+    const rescored = await rescoreAllJobs().catch((e) => {
+      log(`rescore failed: ${e instanceof Error ? e.message : e}`);
+      return 0;
+    });
+    log(`re-scoring produced ${rescored} new match(es)`);
+  }
   const seededCompanies = await seedFavoriteCompanies();
   if (seededCompanies > 0) {
     log(`seeded ${seededCompanies} favorite companies — queueing an immediate sweep`);

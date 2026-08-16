@@ -22,6 +22,8 @@ export const SETTING_KEYS = {
   waError: "whatsapp.error", // last connection error, shown in the dashboard
   waTarget: "whatsapp.target", // phone number to send digests to, e.g. 9725...
   waNotifyMatches: "whatsapp.notifyMatches", // "true" | "false" — instant alerts
+  // Matching
+  globalTitleExcludes: "matching.globalTitleExcludes", // comma list, applied to every profile (title-only)
   // Scheduling
   scrapeCron: "schedule.scrapeCron", // default "0 7 * * *"
   digestCron: "schedule.digestCron", // default "30 7 * * *"

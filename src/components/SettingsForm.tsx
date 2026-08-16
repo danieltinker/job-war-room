@@ -14,6 +14,7 @@ const K = {
   imapMailbox: "imap.mailbox",
   waTarget: "whatsapp.target",
   waNotify: "whatsapp.notifyMatches",
+  globalExcludes: "matching.globalTitleExcludes",
   scrapeCron: "schedule.scrapeCron",
   digestCron: "schedule.digestCron",
   emailMinutes: "schedule.emailSyncMinutes",
@@ -123,6 +124,21 @@ export function SettingsForm() {
             <input className="input" value={val(K.emailMinutes)} placeholder="10" onChange={(e) => setVal(K.emailMinutes, e.target.value)} />
           </div>
         </div>
+      </section>
+
+      <section className="card space-y-4">
+        <h2 className="font-semibold text-white">🚫 Global job-title excludes</h2>
+        <p className="text-sm text-slate-400">
+          Jobs whose <b>title</b> contains any of these terms are never suggested, for every
+          profile. (Title-only, so an engineering job that merely mentions “sales” in its
+          description is unaffected.) Comma-separated.
+        </p>
+        <textarea
+          className="input min-h-24 font-mono text-xs"
+          value={val(K.globalExcludes)}
+          placeholder="sales, finance, real estate, …"
+          onChange={(e) => setVal(K.globalExcludes, e.target.value)}
+        />
       </section>
 
       <section className="card space-y-4">

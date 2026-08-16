@@ -115,18 +115,53 @@ const FAVORITES: CompanySeed[] = [
   },
 ];
 
-/** Creates the favorite companies once; returns how many were created. */
-export async function seedFavoriteCompanies(): Promise<number> {
-  const seeded = await getSetting(SEED_FLAG);
-  if (seeded === "true") return 0;
+const SEED_FLAG_V2 = "companies.seeded.v2";
 
+/**
+ * Israeli cyber/tech watchlist (batch 2). Names normalized (Intezer,
+ * Cellebrite, Check Point, SentinelOne, Moon Active, CrowdStrike, SafeBreach).
+ * Careers URLs set where established — the careers scraper auto-detects any
+ * embedded ATS board. Everything is editable in the Companies page; ambiguous
+ * young startups are flagged in notes so their careers URL can be filled in.
+ */
+const ISRAELI_CYBER_BATCH: CompanySeed[] = [
+  { name: "Mate", website: "", careersUrl: "", linkedinSlug: "" },
+  { name: "Vega", website: "", careersUrl: "", linkedinSlug: "" },
+  { name: "Legion", website: "", careersUrl: "", linkedinSlug: "" },
+  { name: "Pillar Security", website: "https://www.pillar.security", careersUrl: "https://www.pillar.security/careers", linkedinSlug: "pillar-security" },
+  { name: "Intezer", website: "https://intezer.com", careersUrl: "https://intezer.com/careers/", linkedinSlug: "intezer" },
+  { name: "Torq", website: "https://torq.io", careersUrl: "https://torq.io/careers/", linkedinSlug: "torq-io" },
+  { name: "Aqua Security", website: "https://www.aquasec.com", careersUrl: "https://www.aquasec.com/about-us/careers/", linkedinSlug: "aquasecurity" },
+  { name: "Paragon", website: "", careersUrl: "", linkedinSlug: "" },
+  { name: "Cato Networks", website: "https://www.catonetworks.com", careersUrl: "https://www.catonetworks.com/careers/", linkedinSlug: "cato-networks" },
+  { name: "Check Point", website: "https://www.checkpoint.com", careersUrl: "https://careers.checkpoint.com", linkedinSlug: "check-point-software-technologies" },
+  { name: "Island", website: "https://www.island.io", careersUrl: "https://www.island.io/careers", linkedinSlug: "island-io" },
+  { name: "Upwind", website: "https://www.upwind.io", careersUrl: "https://www.upwind.io/careers", linkedinSlug: "upwindsecurity" },
+  { name: "Astelia", website: "", careersUrl: "", linkedinSlug: "" },
+  { name: "SafeBreach", website: "https://www.safebreach.com", careersUrl: "https://www.safebreach.com/careers/", linkedinSlug: "safebreach" },
+  { name: "Tenable", website: "https://www.tenable.com", careersUrl: "https://careers.tenable.com", linkedinSlug: "tenableinc" },
+  { name: "Sygnia", website: "https://www.sygnia.co", careersUrl: "https://www.sygnia.co/careers/", linkedinSlug: "sygnia-consulting" },
+  { name: "Orca Security", website: "https://orca.security", careersUrl: "https://orca.security/about/careers/", linkedinSlug: "orca-security" },
+  { name: "CrowdStrike", website: "https://www.crowdstrike.com", careersUrl: "https://www.crowdstrike.com/careers/", linkedinSlug: "crowdstrike" },
+  { name: "SentinelOne", website: "https://www.sentinelone.com", careersUrl: "https://www.sentinelone.com/jobs/", linkedinSlug: "sentinelone" },
+  { name: "Cellebrite", website: "https://cellebrite.com", careersUrl: "https://cellebrite.com/en/careers/", linkedinSlug: "cellebrite" },
+  { name: "Axonius", website: "https://www.axonius.com", careersUrl: "https://www.axonius.com/careers", linkedinSlug: "axonius" },
+  { name: "Cynet", website: "https://www.cynet.com", careersUrl: "https://www.cynet.com/careers/", linkedinSlug: "cynet-security" },
+  { name: "CYE", website: "https://cyesec.com", careersUrl: "https://cyesec.com/careers/", linkedinSlug: "cye" },
+  { name: "Moon Active", website: "https://www.moonactive.com", careersUrl: "https://www.moonactive.com/careers/", linkedinSlug: "moon-active" },
+  { name: "Overwolf", website: "https://www.overwolf.com", careersUrl: "https://www.overwolf.com/careers/", linkedinSlug: "overwolf" },
+  { name: "Charm", website: "", careersUrl: "", linkedinSlug: "" },
+  { name: "Harmony", website: "", careersUrl: "", linkedinSlug: "" },
+];
+
+const AMBIGUOUS_NOTE =
+  "Ambiguous company name — set the exact careers page URL (and website) here so the sweep can scrape it directly; LinkedIn search covers it meanwhile.";
+
+async function seedBatch(batch: CompanySeed[], noteDefault: string): Promise<number> {
   let created = 0;
-  for (const c of FAVORITES) {
+  for (const c of batch) {
     const existing = await prisma.company.findUnique({ where: { name: c.name } });
-    if (existing) {
-      // e.g. Team8 was auto-added from email earlier — enrich, don't duplicate
-      continue;
-    }
+    if (existing) continue; // never overwrite dashboard edits
     await prisma.company.create({
       data: {
         name: c.name,
@@ -135,12 +170,24 @@ export async function seedFavoriteCompanies(): Promise<number> {
         linkedinSlug: c.linkedinSlug,
         ats: c.ats ?? "NONE",
         atsIdentifier: c.atsIdentifier ?? "",
-        notes: "Priority watchlist",
+        notes: c.website ? noteDefault : AMBIGUOUS_NOTE,
       },
     });
     created++;
   }
+  return created;
+}
 
-  await setSetting(SEED_FLAG, "true");
+/** Creates the favorite companies once per batch; returns how many were created. */
+export async function seedFavoriteCompanies(): Promise<number> {
+  let created = 0;
+  if ((await getSetting(SEED_FLAG)) !== "true") {
+    created += await seedBatch(FAVORITES, "Priority watchlist");
+    await setSetting(SEED_FLAG, "true");
+  }
+  if ((await getSetting(SEED_FLAG_V2)) !== "true") {
+    created += await seedBatch(ISRAELI_CYBER_BATCH, "Israeli cyber watchlist");
+    await setSetting(SEED_FLAG_V2, "true");
+  }
   return created;
 }

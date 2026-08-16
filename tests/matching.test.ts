@@ -39,6 +39,26 @@ describe("scoreJob", () => {
     expect(r.matchedKeywords).toContain("backend engineer");
   });
 
+  it("title-only excludes kill matching titles but not descriptions", () => {
+    const rules = { ...baseRules, titleExcludes: ["sales", "finance"] };
+    const salesTitle = scoreJob(
+      { title: "Sales Engineer", description: "node.js postgresql aws backend engineer", location: "" },
+      rules
+    );
+    expect(salesTitle.suggested).toBe(false);
+    expect(salesTitle.reason).toContain("title excluded");
+
+    const salesInDescription = scoreJob(
+      {
+        title: "Backend Engineer",
+        description: "Work with node.js and postgresql, partnering with the sales team",
+        location: "",
+      },
+      rules
+    );
+    expect(salesInDescription.suggested).toBe(true);
+  });
+
   it("hard-excludes on exclude keywords", () => {
     const r = scoreJob(
       { title: "Backend Engineer Intern", description: "node.js", location: "" },

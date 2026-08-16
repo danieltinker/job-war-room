@@ -14,6 +14,7 @@ const EDITABLE_KEYS: string[] = [
   SETTING_KEYS.imapMailbox,
   SETTING_KEYS.waTarget,
   SETTING_KEYS.waNotifyMatches,
+  SETTING_KEYS.globalTitleExcludes,
   SETTING_KEYS.scrapeCron,
   SETTING_KEYS.digestCron,
   SETTING_KEYS.emailSyncMinutes,

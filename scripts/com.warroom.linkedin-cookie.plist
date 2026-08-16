@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd job: refresh the war room's LinkedIn cookie every morning at 06:45,
+  before the 07:00 sweep.
+
+  Install:
+    1. Edit WorkingDirectory below to your repo path.
+    2. cp scripts/com.warroom.linkedin-cookie.plist ~/Library/LaunchAgents/
+    3. launchctl load ~/Library/LaunchAgents/com.warroom.linkedin-cookie.plist
+    4. Test now: launchctl start com.warroom.linkedin-cookie
+
+  Credentials are read from the repo's .env (ADMIN_EMAIL / ADMIN_PASSWORD).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.warroom.linkedin-cookie</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>scripts/refresh-linkedin-cookie.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/danielbaruch/job-war-room</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>6</integer>
+    <key>Minute</key>
+    <integer>45</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/tmp/warroom-cookie.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/warroom-cookie.log</string>
+</dict>
+</plist>
