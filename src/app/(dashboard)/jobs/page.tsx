@@ -90,12 +90,22 @@ export default async function JobsPage({ searchParams }: { searchParams: SearchP
             )}
             {jobs.map((job) => {
               const openMatch = job.matches.find((m) => m.status === "SUGGESTED");
-              const detail = (job.scoreDetail ?? []) as {
-                profile: string;
-                score: number;
-                matched: string[];
-                reason: string;
-              }[];
+              // scoreDetail is free-form JSON in the DB — normalize defensively
+              // (rows written by older code may have a different shape).
+              const detail = (Array.isArray(job.scoreDetail) ? job.scoreDetail : []).flatMap(
+                (d) => {
+                  if (!d || typeof d !== "object" || Array.isArray(d)) return [];
+                  const entry = d as Record<string, unknown>;
+                  return [
+                    {
+                      profile: String(entry.profile ?? "?"),
+                      score: Number(entry.score ?? 0),
+                      matched: Array.isArray(entry.matched) ? entry.matched.map(String) : [],
+                      reason: String(entry.reason ?? ""),
+                    },
+                  ];
+                }
+              );
               return (
                 <tr key={job.id}>
                   <td className="td max-w-sm">
