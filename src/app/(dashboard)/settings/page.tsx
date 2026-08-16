@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { SettingsForm } from "@/components/SettingsForm";
 import { WhatsAppPanel } from "@/components/WhatsAppPanel";
 import { LinkedinTest } from "@/components/LinkedinTest";
+import { WaGroupsPanel } from "@/components/WaGroupsPanel";
 import { RunNowButton } from "@/components/RunNowButton";
 import { StatusBadge } from "@/components/StatusBadge";
 
@@ -31,6 +32,7 @@ export default async function SettingsPage() {
       </header>
 
       <WhatsAppPanel />
+      <WaGroupsPanel />
       <section className="card space-y-3">
         <h2 className="font-semibold text-white">🔬 Diagnostics</h2>
         <p className="text-sm text-slate-400">

@@ -32,6 +32,32 @@ export function CompanyManager({ companies }: { companies: CompanyRow[] }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [testResults, setTestResults] = useState<Record<string, string>>({});
+  const [testing, setTesting] = useState<string | null>(null);
+
+  async function testCompany(c: CompanyRow) {
+    setTesting(c.id);
+    const data = await fetch("/api/diagnostics/company", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ companyId: c.id }),
+    })
+      .then((r) => r.json())
+      .catch(() => null);
+    setTesting(null);
+    if (!data) {
+      setTestResults((t) => ({ ...t, [c.id]: "✗ test failed" }));
+      return;
+    }
+    const parts = (data.results as { source: string; ok: boolean; jobs: number; error?: string }[]).map(
+      (r) => (r.ok ? `✓ ${r.source}: ${r.jobs} jobs` : `✗ ${r.source}: ${r.error}`)
+    );
+    if (data.detected) {
+      parts.unshift(`🔎 detected ${data.detected.kind} board "${data.detected.identifier}" — saved`);
+    }
+    setTestResults((t) => ({ ...t, [c.id]: parts.join(" · ") }));
+    if (data.detected) router.refresh();
+  }
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -204,12 +230,25 @@ export function CompanyManager({ companies }: { companies: CompanyRow[] }) {
                   </button>
                 </td>
                 <td className="td text-right">
+                  <button
+                    className="btn py-1 text-xs"
+                    onClick={() => testCompany(c)}
+                    disabled={testing === c.id}
+                    title="Scrape this company's sources right now and report what came back"
+                  >
+                    {testing === c.id ? "Testing…" : "Detect & test"}
+                  </button>{" "}
                   <button className="btn py-1 text-xs" onClick={() => startEdit(c)}>
                     Edit
                   </button>{" "}
                   <button className="btn btn-danger py-1 text-xs" onClick={() => remove(c)}>
                     Delete
                   </button>
+                  {testResults[c.id] && (
+                    <p className="mt-1 max-w-md text-right text-xs text-slate-400">
+                      {testResults[c.id]}
+                    </p>
+                  )}
                 </td>
               </tr>
             ))}

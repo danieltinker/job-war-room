@@ -78,6 +78,15 @@ describe("scoreJob", () => {
     expect(r.reason).toBe("location mismatch");
   });
 
+  it("passes the location gate when the job states no location", () => {
+    const rules = { ...baseRules, locations: ["Israel"], remoteOk: false };
+    const r = scoreJob(
+      { title: "Backend Engineer", description: "node.js postgresql", location: "" },
+      rules
+    );
+    expect(r.suggested).toBe(true);
+  });
+
   it("accepts remote jobs when remoteOk despite location filter", () => {
     const rules = { ...baseRules, locations: ["Israel"], remoteOk: true };
     const r = scoreJob(

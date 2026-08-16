@@ -91,6 +91,7 @@ enum JobSource {
   SMARTRECRUITERS
   CAREERS // scraped from a company careers page
   EMAIL // auto-created from an application email
+  WHATSAPP // captured from a monitored WhatsApp job group (referral potential)
   MANUAL
 }
 

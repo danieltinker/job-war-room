@@ -70,9 +70,11 @@ export function scoreJob(job: JobFacts, rules: ProfileRules): MatchResult {
     }
   }
 
-  // Location gate: if locations are specified, job must match one of them
-  // (or read as remote when remoteOk).
-  if (rules.locations.length > 0) {
+  // Location gate: if locations are specified AND the job states a location,
+  // it must match one of them (or read as remote when remoteOk). Jobs with an
+  // unknown location (WhatsApp leads, careers-page links) pass the gate —
+  // you can't reject what isn't stated.
+  if (rules.locations.length > 0 && job.location.trim() !== "") {
     const locOk = rules.locations.some((l) => containsTerm(job.location, l));
     if (!locOk && !(rules.remoteOk && looksRemote(job))) {
       return { score: 0, matchedKeywords: [], suggested: false, reason: "location mismatch" };

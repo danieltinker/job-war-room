@@ -22,6 +22,8 @@ export const SETTING_KEYS = {
   waError: "whatsapp.error", // last connection error, shown in the dashboard
   waTarget: "whatsapp.target", // phone number to send digests to, e.g. 9725...
   waNotifyMatches: "whatsapp.notifyMatches", // "true" | "false" — instant alerts
+  waGroups: "whatsapp.groups", // JSON [{jid,name}] — all groups on the account (refreshed on connect)
+  waJobGroups: "whatsapp.jobGroups", // JSON [jid] — groups monitored for job posts
   // Matching
   globalTitleExcludes: "matching.globalTitleExcludes", // comma list, applied to every profile (title-only)
   // Scheduling
