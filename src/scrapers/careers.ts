@@ -117,6 +117,81 @@ export function parseJsonLdJobs(html: string, pageUrl: string, companyName: stri
   return out;
 }
 
+/** Comeet reference (company uid + widget token) embedded in a careers page. */
+export function extractComeetRef(html: string): { uid: string | null; token: string | null; jobsPage: string | null } {
+  const uid =
+    html.match(/comeet\.com\/jobs\/[A-Za-z0-9_-]+\/([0-9A-F]{2}\.[0-9A-F]{3})/i)?.[1] ??
+    html.match(/careers-api\/2\.0\/company\/([0-9A-F]{2}\.[0-9A-F]{3})/i)?.[1] ??
+    null;
+  const token =
+    html.match(/positions\?token=([A-Za-z0-9]+)/i)?.[1] ??
+    html.match(/["']token["']\s*[:=]\s*["']([A-Za-z0-9]{8,})["']/i)?.[1] ??
+    null;
+  const jobsPage =
+    html.match(/https?:\/\/(?:www\.)?comeet\.com\/jobs\/[A-Za-z0-9_-]+\/[0-9A-F]{2}\.[0-9A-F]{3}/i)?.[0] ??
+    null;
+  return { uid, token, jobsPage };
+}
+
+interface ComeetPosition {
+  uid?: string;
+  name?: string;
+  location?: { name?: string };
+  url_comeet_hosted_page?: string;
+  url_active_page?: string;
+  time_updated?: string;
+  department?: string;
+}
+
+/** Comeet careers widget API — used when a careers page embeds a Comeet board. */
+async function scrapeComeetViaApi(
+  uid: string,
+  token: string,
+  companyName: string
+): Promise<ScrapedJob[]> {
+  const base = process.env.COMEET_API_BASE ?? "https://www.comeet.co";
+  const res = await fetch(
+    `${base}/careers-api/2.0/company/${encodeURIComponent(uid)}/positions?token=${encodeURIComponent(token)}`,
+    { headers: { accept: "application/json", "user-agent": UA } }
+  );
+  if (!res.ok) throw new Error(`Comeet ${uid}: HTTP ${res.status}`);
+  const data = (await res.json()) as ComeetPosition[];
+  return (Array.isArray(data) ? data : [])
+    .filter((p) => p.name && p.uid)
+    .map((p) => ({
+      source: "CAREERS" as const,
+      externalId: `comeet:${p.uid}`,
+      url: p.url_comeet_hosted_page ?? p.url_active_page ?? "",
+      title: p.name!,
+      companyName,
+      location: p.location?.name ?? "",
+      description: p.department ? `Department: ${p.department}` : "",
+      postedAt: p.time_updated ? new Date(p.time_updated) : null,
+    }));
+}
+
+/** Detect + scrape a Comeet board referenced by a careers page (follows the
+ *  standalone comeet.com jobs page once if the token isn't on the first page). */
+async function tryComeet(html: string, companyName: string): Promise<ScrapedJob[] | null> {
+  let ref = extractComeetRef(html);
+  if (!ref.uid && !ref.jobsPage) return null;
+  if ((!ref.uid || !ref.token) && ref.jobsPage) {
+    const followed = await fetchHtml(ref.jobsPage);
+    if (followed) {
+      const deeper = extractComeetRef(followed);
+      ref = {
+        uid: ref.uid ?? deeper.uid,
+        token: ref.token ?? deeper.token,
+        jobsPage: ref.jobsPage,
+      };
+    }
+  }
+  if (ref.uid && ref.token) {
+    return scrapeComeetViaApi(ref.uid, ref.token, companyName);
+  }
+  return null;
+}
+
 const HREF_HINTS = /\/(jobs?|careers?|positions?|openings?|vacanc|opportunit|role)s?\/|[?&](gh_jid|lever|job_?id|position)=/i;
 const TEXT_NOISE =
   /^(careers?|jobs?|open positions?|see (all|more)|view (all|more)|apply|about|learn more|read more|home|back|all departments?|benefits|culture|team|contact)$/i;
@@ -170,10 +245,14 @@ export async function scrapeCareersPage(url: string, companyName: string): Promi
   if (ats?.kind === "ASHBY") return scrapeAshby(ats.identifier, companyName);
   if (ats?.kind === "SMARTRECRUITERS") return scrapeSmartrecruiters(ats.identifier, companyName);
 
-  // 2) Structured data on the page itself
+  // 2) Embedded Comeet board (common for Israeli companies)
+  const comeet = await tryComeet(html, companyName).catch(() => null);
+  if (comeet && comeet.length > 0) return comeet;
+
+  // 3) Structured data on the page itself
   const jsonLd = parseJsonLdJobs(html, url, companyName);
   if (jsonLd.length > 0) return jsonLd;
 
-  // 3) Heuristic link sweep
+  // 4) Heuristic link sweep
   return extractJobLinks(html, url, companyName);
 }

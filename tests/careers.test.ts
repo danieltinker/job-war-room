@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectAts, extractJobLinks, parseJsonLdJobs } from "../src/scrapers/careers";
+import { detectAts, extractComeetRef, extractJobLinks, parseJsonLdJobs } from "../src/scrapers/careers";
 
 describe("detectAts", () => {
   it("detects an embedded Greenhouse board", () => {
@@ -26,6 +26,28 @@ describe("detectAts", () => {
   });
   it("returns null for plain pages", () => {
     expect(detectAts("<html><body>Join us!</body></html>")).toBeNull();
+  });
+});
+
+describe("extractComeetRef", () => {
+  it("finds the company uid from a standalone comeet jobs link", () => {
+    const ref = extractComeetRef('<a href="https://www.comeet.com/jobs/cyera/17.008">Open roles</a>');
+    expect(ref.uid).toBe("17.008");
+    expect(ref.jobsPage).toBe("https://www.comeet.com/jobs/cyera/17.008");
+    expect(ref.token).toBeNull();
+  });
+  it("finds uid + token from an embedded careers-api reference", () => {
+    const ref = extractComeetRef(
+      '<script src="https://www.comeet.co/careers-api/2.0/company/A1.B2C/positions?token=abcDEF123456"></script>'
+    );
+    expect(ref.uid).toBe("A1.B2C");
+    expect(ref.token).toBe("abcDEF123456");
+  });
+  it("returns nulls on unrelated pages", () => {
+    const ref = extractComeetRef("<html><body>Join us</body></html>");
+    expect(ref.uid).toBeNull();
+    expect(ref.token).toBeNull();
+    expect(ref.jobsPage).toBeNull();
   });
 });
 
