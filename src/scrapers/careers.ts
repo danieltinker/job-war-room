@@ -170,6 +170,27 @@ async function scrapeComeetViaApi(
     }));
 }
 
+/**
+ * Scrape a Comeet board directly from a company identifier — either
+ * "companySlug/uid" (e.g. "cyera/17.008") or a full comeet.com jobs URL.
+ * Fetches the standalone jobs page to obtain the widget token, then uses the
+ * structured careers API.
+ */
+export async function scrapeComeet(identifier: string, companyName: string): Promise<ScrapedJob[]> {
+  const jobsPage = /^https?:\/\//i.test(identifier)
+    ? identifier
+    : `https://www.comeet.com/jobs/${identifier.replace(/^\/+|\/+$/g, "")}`;
+  const html = await fetchHtml(jobsPage);
+  if (!html) throw new Error(`Comeet page unreachable: ${jobsPage}`);
+  const ref = extractComeetRef(html);
+  if (!ref.uid || !ref.token) {
+    throw new Error(
+      `Comeet board not resolvable from ${jobsPage} — expected identifier like "company/17.008"`
+    );
+  }
+  return scrapeComeetViaApi(ref.uid, ref.token, companyName);
+}
+
 /** Detect + scrape a Comeet board referenced by a careers page (follows the
  *  standalone comeet.com jobs page once if the token isn't on the first page). */
 async function tryComeet(html: string, companyName: string): Promise<ScrapedJob[] | null> {

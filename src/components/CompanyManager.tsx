@@ -145,6 +145,7 @@ export function CompanyManager({ companies }: { companies: CompanyRow[] }) {
               <option value="LEVER">Lever</option>
               <option value="ASHBY">Ashby</option>
               <option value="SMARTRECRUITERS">SmartRecruiters</option>
+              <option value="COMEET">Comeet (company/uid)</option>
             </select>
           </div>
           <div>

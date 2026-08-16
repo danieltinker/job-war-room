@@ -7,7 +7,7 @@ const PatchBody = z.object({
   website: z.string().max(500).optional(),
   linkedinSlug: z.string().max(200).optional(),
   careersUrl: z.string().max(500).optional(),
-  ats: z.enum(["NONE", "GREENHOUSE", "LEVER", "ASHBY", "SMARTRECRUITERS"]).optional(),
+  ats: z.enum(["NONE", "GREENHOUSE", "LEVER", "ASHBY", "SMARTRECRUITERS", "COMEET"]).optional(),
   atsIdentifier: z.string().max(200).optional(),
   active: z.boolean().optional(),
   notes: z.string().max(2000).optional(),

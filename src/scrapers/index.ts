@@ -16,7 +16,7 @@ import { scrapeGreenhouse } from "./greenhouse";
 import { scrapeLever } from "./lever";
 import { scrapeAshby } from "./ashby";
 import { scrapeSmartrecruiters } from "./smartrecruiters";
-import { scrapeCareersPage } from "./careers";
+import { scrapeCareersPage, scrapeComeet } from "./careers";
 import { searchLinkedinJobs, enrichDescriptions } from "./linkedin";
 import type { ScrapedJob, ScrapeContext } from "./types";
 import type { PositionProfile, Prisma } from "@prisma/client";
@@ -98,6 +98,8 @@ export async function runScrapeSweep(runId: string | null = null): Promise<Sweep
             return { jobs: await scrapeAshby(company.atsIdentifier, company.name) };
           case "SMARTRECRUITERS":
             return { jobs: await scrapeSmartrecruiters(company.atsIdentifier, company.name) };
+          case "COMEET":
+            return { jobs: await scrapeComeet(company.atsIdentifier, company.name) };
           default:
             return { jobs: [] };
         }

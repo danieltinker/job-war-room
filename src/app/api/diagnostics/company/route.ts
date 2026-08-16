@@ -7,7 +7,7 @@ import { scrapeGreenhouse } from "@/scrapers/greenhouse";
 import { scrapeLever } from "@/scrapers/lever";
 import { scrapeAshby } from "@/scrapers/ashby";
 import { scrapeSmartrecruiters } from "@/scrapers/smartrecruiters";
-import { scrapeCareersPage, detectAts } from "@/scrapers/careers";
+import { scrapeCareersPage, scrapeComeet, detectAts } from "@/scrapers/careers";
 
 const Body = z.object({ companyId: z.string().min(1) });
 
@@ -37,7 +37,9 @@ export async function POST(req: NextRequest) {
             ? await scrapeLever(company.atsIdentifier, company.name)
             : company.ats === "ASHBY"
               ? await scrapeAshby(company.atsIdentifier, company.name)
-              : await scrapeSmartrecruiters(company.atsIdentifier, company.name);
+              : company.ats === "COMEET"
+                ? await scrapeComeet(company.atsIdentifier, company.name)
+                : await scrapeSmartrecruiters(company.atsIdentifier, company.name);
       results.push({ source: `${company.ats} (${company.atsIdentifier})`, ok: true, jobs: jobs.length });
     } catch (e) {
       results.push({

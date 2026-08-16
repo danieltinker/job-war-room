@@ -9,7 +9,7 @@ const CompanyBody = z.object({
   website: z.string().max(500).default(""),
   linkedinSlug: z.string().max(200).default(""),
   careersUrl: z.string().max(500).default(""),
-  ats: z.enum(["NONE", "GREENHOUSE", "LEVER", "ASHBY", "SMARTRECRUITERS"]).default("NONE"),
+  ats: z.enum(["NONE", "GREENHOUSE", "LEVER", "ASHBY", "SMARTRECRUITERS", "COMEET"]).default("NONE"),
   atsIdentifier: z.string().max(200).default(""),
   active: z.boolean().default(true),
   notes: z.string().max(2000).default(""),
