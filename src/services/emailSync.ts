@@ -170,27 +170,45 @@ export async function processJobEmail(
   result.jobRelated++;
 
   const classification = classifyEmail(facts);
-  const companyName = extractCompany(facts, companyNames);
-  let application = companyName
-    ? applications.find((a) => a.job.companyName.toLowerCase() === companyName.toLowerCase())
-    : undefined;
+  const companyName = extractCompany(facts, companyNames) ?? extractNewCompanyName(facts);
+  const emailTitle = extractPositionTitle(facts);
 
-  // Auto-create: an application email for a company not in the pipeline yet
-  // (e.g. you applied on their site today) becomes a tracked application,
-  // and the company joins the watchlist.
+  // Position-aware matching: several applications at the same company must not
+  // collapse into one. A titled email binds to the application whose job title
+  // overlaps; an untitled email binds to the company's most recent application.
+  const normalizeTitle = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const titlesOverlap = (a: string, b: string) => {
+    const na = normalizeTitle(a);
+    const nb = normalizeTitle(b);
+    return na.length > 0 && nb.length > 0 && (na.includes(nb) || nb.includes(na));
+  };
+
+  let application: AppWithJob | undefined;
+  if (companyName) {
+    const candidates = applications
+      .filter((a) => a.job.companyName.toLowerCase() === companyName.toLowerCase())
+      .sort((a, b) => b.appliedAt.getTime() - a.appliedAt.getTime());
+    application = emailTitle
+      ? candidates.find((a) => titlesOverlap(a.job.title, emailTitle))
+      : candidates[0];
+  }
+
+  // Auto-create: an application email with no matching application — a new
+  // company, or a new position at a known company — becomes a tracked
+  // application, and the company joins the watchlist.
   if (
     !application &&
     AUTO_CREATE_CLASSES.has(classification) &&
     Date.now() - receivedAt.getTime() < AUTO_CREATE_WINDOW_MS
   ) {
-    const newName = companyName ?? extractNewCompanyName(facts);
+    const newName = companyName;
     if (newName) {
       const company = await prisma.company.upsert({
         where: { name: newName },
         create: { name: newName, notes: "Added automatically from application email" },
         update: {},
       });
-      const title = extractPositionTitle(facts) ?? `Application at ${newName}`;
+      const title = emailTitle ?? `Application at ${newName}`;
       const dedupeKey = `email:${newName.toLowerCase()}:${title.toLowerCase()}`;
       const job =
         (await prisma.job.findUnique({ where: { dedupeKey } })) ??

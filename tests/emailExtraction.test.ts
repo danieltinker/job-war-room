@@ -43,6 +43,26 @@ describe("extractNewCompanyName", () => {
     ).toBe("Monday");
   });
 
+  it("extracts the employer from Comeet notification subdomains (real Team8 format)", () => {
+    expect(
+      extractNewCompanyName({
+        fromAddress: "no-reply@team8.comeet-notifications.com",
+        subject: "Thank you for applying for Reindeer- Software Engineer (Backend)",
+        body: "Hi, Thank you for applying.",
+      })
+    ).toBe("Team8");
+  });
+
+  it("extracts the employer from Workday sender local parts", () => {
+    expect(
+      extractNewCompanyName({
+        fromAddress: "redhat@myworkday.com",
+        subject: "Your application",
+        body: "",
+      })
+    ).toBe("Redhat");
+  });
+
   it("refuses generic ATS domains with no other signal", () => {
     expect(
       extractNewCompanyName({
@@ -73,6 +93,23 @@ describe("extractPositionTitle", () => {
         body: "Thank you for applying to the Platform Engineer role at Acme.",
       })
     ).toBe("Platform Engineer");
+  });
+
+  it("extracts the position from Comeet 'applying for' subjects (real Team8 format)", () => {
+    expect(
+      extractPositionTitle({
+        fromAddress: "no-reply@team8.comeet-notifications.com",
+        subject: "Thank you for applying for Team8-Cyber Startup, Senior Software Engineer",
+        body: "",
+      })
+    ).toBe("Team8-Cyber Startup, Senior Software Engineer");
+    expect(
+      extractPositionTitle({
+        fromAddress: "no-reply@team8.comeet-notifications.com",
+        subject: "Thank you for applying for Reindeer- Software Engineer (Infrastructure)",
+        body: "",
+      })
+    ).toBe("Reindeer- Software Engineer (Infrastructure)");
   });
 
   it("returns null when nothing matches", () => {

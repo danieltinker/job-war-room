@@ -169,6 +169,11 @@ const GENERIC_NAME_WORDS =
  * Best-effort employer name for an email that matches no known company —
  * used to auto-create applications from confirmation emails.
  */
+/** ATS mailer domains where the employer is the subdomain:
+ *  no-reply@team8.comeet-notifications.com → "Team8" */
+const ATS_SUBDOMAIN_MAILERS =
+  /^([a-z0-9-]+)\.(comeet-notifications\.com|bamboohr\.com|recruitee\.com|workablemail\.com|greenhouse-mail\.io)$/;
+
 export function extractNewCompanyName(facts: EmailFacts): string | null {
   const clean = (s: string) =>
     s
@@ -176,6 +181,16 @@ export function extractNewCompanyName(facts: EmailFacts): string | null {
       .replace(/[|@·–—-]+$/g, "")
       .replace(/\s+/g, " ")
       .trim();
+
+  const [localPart, domain0] = facts.fromAddress.toLowerCase().split("@");
+
+  // 0) ATS mailers that encode the employer in the address itself
+  const sub = domain0?.match(ATS_SUBDOMAIN_MAILERS);
+  if (sub) return sub[1].charAt(0).toUpperCase() + sub[1].slice(1);
+  if (domain0 === "myworkday.com" && localPart && localPart.length >= 2) {
+    // Workday sends from <company>@myworkday.com
+    return localPart.charAt(0).toUpperCase() + localPart.slice(1);
+  }
 
   // 1) Subject patterns: "your application to X", "thank you for applying to X"
   const subjectPatterns = [
@@ -208,6 +223,19 @@ export function extractNewCompanyName(facts: EmailFacts): string | null {
 
 /** Best-effort position title from an application email, or null. */
 export function extractPositionTitle(facts: EmailFacts): string | null {
+  // Comeet-style subjects put the position (not the company) after "for":
+  // "Thank you for applying for Reindeer- Software Engineer (Backend)"
+  const subjectTail = facts.subject.match(
+    /thank(?:s| you) for applying (?:for|to)[:\s]+(.{3,90}?)\s*$/i
+  );
+  if (subjectTail) {
+    const title = subjectTail[1].replace(/\s+/g, " ").trim();
+    // If it reads like a role (contains a role-ish word), trust it
+    if (/engineer|developer|researcher|scientist|manager|analyst|architect|designer|lead|devops|sre|consultant|specialist/i.test(title)) {
+      return title;
+    }
+  }
+
   const text = `${facts.subject}\n${facts.body.slice(0, 1000)}`;
   const patterns = [
     /application for (?:the )?(?:position of )?["“]?([^"”,\n]{3,80}?)["”]? (?:position|role|at|with)\b/i,
