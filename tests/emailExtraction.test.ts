@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { extractNewCompanyName, extractPositionTitle } from "../src/core/emailClassifier";
+import { extractJobUrl, extractNewCompanyName, extractPositionTitle } from "../src/core/emailClassifier";
+
+// Real LinkedIn Easy Apply confirmation shape (abridged)
+const LINKEDIN_BODY = `Your application was sent to Cellebrite
+
+Exploit Engineer
+Cellebrite
+Tel Aviv-Yafo
+View job: https://www.linkedin.com/comm/jobs/view/4372536672/?trackingId=xyz
+
+Applied on August 16, 2026
+Now, take these next steps for more success
+
+View similar jobs you may be interested in
+
+Malware Research (Mid-Level)
+Alice (Formerly ActiveFence)
+View job: https://www.linkedin.com/comm/jobs/view/4451399582/?trackingId=abc`;
 
 describe("extractNewCompanyName", () => {
   it("extracts from 'application to X' subjects", () => {
@@ -63,6 +80,28 @@ describe("extractNewCompanyName", () => {
     ).toBe("Redhat");
   });
 
+  it("extracts the employer from LinkedIn Easy Apply subjects — never 'LinkedIn'", () => {
+    expect(
+      extractNewCompanyName({
+        fromAddress: "jobs-noreply@linkedin.com",
+        fromName: "LinkedIn",
+        subject: "Daniel, your application was sent to Blockaid",
+        body: LINKEDIN_BODY,
+      })
+    ).toBe("Blockaid");
+  });
+
+  it("never falls back to a job-board display name", () => {
+    expect(
+      extractNewCompanyName({
+        fromAddress: "jobs-noreply@linkedin.com",
+        fromName: "LinkedIn",
+        subject: "A message about your job search",
+        body: "",
+      })
+    ).toBeNull();
+  });
+
   it("refuses generic ATS domains with no other signal", () => {
     expect(
       extractNewCompanyName({
@@ -112,9 +151,31 @@ describe("extractPositionTitle", () => {
     ).toBe("Reindeer- Software Engineer (Infrastructure)");
   });
 
+  it("extracts the applied title from LinkedIn bodies, not the similar-jobs section", () => {
+    expect(
+      extractPositionTitle({
+        fromAddress: "jobs-noreply@linkedin.com",
+        fromName: "LinkedIn",
+        subject: "Daniel, your application was sent to Cellebrite",
+        body: LINKEDIN_BODY,
+      })
+    ).toBe("Exploit Engineer");
+  });
+
   it("returns null when nothing matches", () => {
     expect(
       extractPositionTitle({ fromAddress: "a@b.com", subject: "hello", body: "world" })
     ).toBeNull();
+  });
+});
+
+describe("extractJobUrl", () => {
+  it("takes the applied job's link, not a similar-jobs link", () => {
+    expect(
+      extractJobUrl({ fromAddress: "jobs-noreply@linkedin.com", subject: "", body: LINKEDIN_BODY })
+    ).toBe("https://www.linkedin.com/jobs/view/4372536672");
+  });
+  it("returns null without a link", () => {
+    expect(extractJobUrl({ fromAddress: "a@b.com", subject: "", body: "no links here" })).toBeNull();
   });
 });

@@ -13,6 +13,7 @@ import { getSettings, setSetting, SETTING_KEYS } from "@/lib/settings";
 import {
   classifyEmail,
   extractCompany,
+  extractJobUrl,
   extractNewCompanyName,
   extractPositionTitle,
   looksJobRelated,
@@ -30,8 +31,9 @@ export interface EmailSyncResult {
   statusChanges: { company: string; title: string; from: string; to: string }[];
 }
 
-/** Only auto-create applications from recent mail — not a month of history. */
-const AUTO_CREATE_WINDOW_MS = 7 * 86400_000;
+/** Auto-create applications from mail up to this old — matches the 30-day
+ *  first-run lookback so "track everything I applied to" actually can. */
+const AUTO_CREATE_WINDOW_MS = 30 * 86400_000;
 const AUTO_CREATE_CLASSES = new Set([
   "APPLICATION_RECEIVED",
   "ASSESSMENT",
@@ -216,7 +218,7 @@ export async function processJobEmail(
           data: {
             dedupeKey,
             source: "EMAIL",
-            url: "",
+            url: extractJobUrl(facts) ?? "",
             title: title.slice(0, 500),
             companyName: newName,
             companyId: company.id,

@@ -5,6 +5,7 @@ import { WhatsAppPanel } from "@/components/WhatsAppPanel";
 import { LinkedinTest } from "@/components/LinkedinTest";
 import { WaGroupsPanel } from "@/components/WaGroupsPanel";
 import { RunNowButton } from "@/components/RunNowButton";
+import { RescanButton } from "@/components/RescanButton";
 import { StatusBadge } from "@/components/StatusBadge";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ export default async function SettingsPage() {
         <div className="flex gap-2">
           <RunNowButton kind="scrape" label="Run sweep" />
           <RunNowButton kind="email" label="Sync email" />
+          <RescanButton />
           <RunNowButton kind="digest" label="Send digest" />
         </div>
       </header>

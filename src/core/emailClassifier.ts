@@ -192,8 +192,11 @@ export function extractNewCompanyName(facts: EmailFacts): string | null {
     return localPart.charAt(0).toUpperCase() + localPart.slice(1);
   }
 
-  // 1) Subject patterns: "your application to X", "thank you for applying to X"
+  // 1) Subject patterns: "your application to X", "thank you for applying to X",
+  //    LinkedIn Easy Apply: "Daniel, your application was sent to X"
   const subjectPatterns = [
+    /application was sent to ([A-Za-z0-9][\w .&'-]{1,40})/i,
+    /you(?:'ve| have)? applied to ([A-Za-z0-9][\w .&'-]{1,40})/i,
     /(?:your |the )?application (?:to|at|with|for a position at) ([A-Za-z0-9][\w .&'-]{1,40})/i,
     /(?:thank(?:s| you)) for applying (?:to|at) ([A-Za-z0-9][\w .&'-]{1,40})/i,
     /interest in (?:joining )?([A-Za-z0-9][\w .&'-]{1,40})/i,
@@ -206,8 +209,11 @@ export function extractNewCompanyName(facts: EmailFacts): string | null {
     }
   }
 
-  // 2) From display name: "Team8 Careers <no-reply@comeet.co>" → "Team8"
-  if (facts.fromName) {
+  // 2) From display name: "Team8 Careers <no-reply@comeet.co>" → "Team8".
+  //    Job boards and ATS platforms are never the employer.
+  const PLATFORM_NAMES =
+    /^(linkedin|indeed|glassdoor|comeet|greenhouse|lever|ashby|workday|smartrecruiters|ziprecruiter|wellfound|alljobs|drushim)\b/i;
+  if (facts.fromName && !PLATFORM_NAMES.test(facts.fromName.trim())) {
     const name = clean(facts.fromName);
     if (name.length >= 2 && name.length <= 40 && !/@/.test(name)) return name;
   }
@@ -221,6 +227,9 @@ export function extractNewCompanyName(facts: EmailFacts): string | null {
   return null;
 }
 
+const ROLE_WORDS =
+  /engineer|developer|researcher|scientist|manager|analyst|architect|designer|lead|devops|sre|consultant|specialist|programmer/i;
+
 /** Best-effort position title from an application email, or null. */
 export function extractPositionTitle(facts: EmailFacts): string | null {
   // Comeet-style subjects put the position (not the company) after "for":
@@ -231,8 +240,31 @@ export function extractPositionTitle(facts: EmailFacts): string | null {
   if (subjectTail) {
     const title = subjectTail[1].replace(/\s+/g, " ").trim();
     // If it reads like a role (contains a role-ish word), trust it
-    if (/engineer|developer|researcher|scientist|manager|analyst|architect|designer|lead|devops|sre|consultant|specialist/i.test(title)) {
+    if (ROLE_WORDS.test(title)) {
       return title;
+    }
+  }
+
+  // LinkedIn Easy Apply confirmations carry the job title as a standalone
+  // body line: "Your application was sent to Wiz\nExploit Engineer\n…".
+  // Cut before the "similar jobs" recommendations — those contain OTHER
+  // jobs' titles that must not be mistaken for the applied role.
+  const fromLinkedin =
+    /linkedin\.com$/i.test(facts.fromAddress.split("@")[1] ?? "") ||
+    /linkedin/i.test(facts.fromName ?? "");
+  if (fromLinkedin) {
+    const appliedSection = facts.body.split(/take these next steps|similar jobs|people also viewed/i)[0];
+    for (const raw of appliedSection.split("\n").slice(0, 25)) {
+      const line = raw.trim();
+      if (
+        line.length >= 6 &&
+        line.length <= 90 &&
+        ROLE_WORDS.test(line) &&
+        !/applied|application|sent|view |premium|similar|recommend|alert/i.test(line) &&
+        !/https?:\/\//.test(line)
+      ) {
+        return line;
+      }
     }
   }
 
@@ -251,6 +283,14 @@ export function extractPositionTitle(facts: EmailFacts): string | null {
     }
   }
   return null;
+}
+
+/** The applied job's canonical LinkedIn URL from a confirmation email body
+ *  (first jobs/view link before the "similar jobs" section), or null. */
+export function extractJobUrl(facts: EmailFacts): string | null {
+  const appliedSection = facts.body.split(/take these next steps|similar jobs|people also viewed/i)[0];
+  const id = appliedSection.match(/linkedin\.com\/(?:comm\/)?jobs\/view\/(\d{6,})/i)?.[1];
+  return id ? `https://www.linkedin.com/jobs/view/${id}` : null;
 }
 
 /** Map an email classification to the pipeline status it implies (or null). */
